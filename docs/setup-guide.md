@@ -340,7 +340,7 @@ curl -X POST \
 If you have Claude Code with the n8n MCP server configured on the new instance:
 1. Share the `docs/workflow-reference.md` file with Claude
 2. Ask Claude to recreate the workflow using `n8n_create_workflow`
-3. Claude can rebuild the entire 18-node workflow from the documentation
+3. Claude can rebuild the entire 24-node workflow from the documentation
 4. This is the power of having the workflow fully documented in markdown
 
 ### Method 4: n8n Cloud Migration
