@@ -1,0 +1,46 @@
+# Raw workflow backups with credential IDs
+exports/*-raw-backup.json
+exports/*-with-creds.json
+
+# n8n instance data (generated at runtime)
+database.sqlite
+database.sqlite-wal
+database.sqlite-shm
+binaryData/
+crash.journal
+n8nEventLog*.log
+
+# Sensitive configuration
+config
+.env
+.env.local
+.env.production
+
+# n8n MCP local settings
+.mcp.json
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/plans/
+.claude/projects/
+.claude/todos/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules (submodules have their own)
+node_modules/
+
+# Local n8n nodes
+nodes/
+
+# Submodule build artifacts (if using local builds)
+n8n-mcp/dist/
+n8n-mcp/node_modules/
+n8n-mcp/coverage/
+n8n-skills/node_modules/

@@ -1,0 +1,683 @@
+{
+  "name": "YouTube Shorts - Tech News Automation",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.reddit.com/r/technology/hot.json?limit=15",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-bot/1.0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetchReddit",
+      "name": "Fetch Reddit Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst posts = data?.data?.children || [];\nconst topPosts = posts\n  .filter(p => !p.data.stickied)\n  .slice(0, 10)\n  .map((p, i) => {\n    const d = p.data;\n    return `${i+1}. [Score: ${d.score}] ${d.title} (${d.num_comments} comments)`;\n  })\n  .join('\\n');\n\nreturn {\n  json: {\n    redditSummary: topPosts\n  }\n};"
+      },
+      "id": "formatReddit",
+      "name": "Format Reddit Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=10",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetchHN",
+      "name": "Fetch HN Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const redditData = $('Format Reddit Data').first().json.redditSummary || 'No Reddit data';\n\nconst hnRaw = $input.first().json;\nconst hnHits = hnRaw.hits || [];\nconst hnSummary = hnHits.slice(0, 10).map((h, i) => {\n  return `${i+1}. [Points: ${h.points}] ${h.title} (${h.num_comments} comments) - ${h.url || 'https://news.ycombinator.com/item?id=' + h.objectID}`;\n}).join('\\n');\n\nreturn {\n  json: {\n    redditSummary: redditData,\n    hnSummary: hnSummary,\n    combinedPrompt: `REDDIT TOP POSTS (r/technology):\\n${redditData}\\n\\nHACKER NEWS FRONT PAGE:\\n${hnSummary}\\n\\nFrom the stories above, pick the SINGLE most interesting, viral tech/AI story that would make an engaging 45-second YouTube Short. Return in this format:\\n\\nSTORY_TITLE: [the headline]\\nKEY_FACTS:\\n- [fact 1]\\n- [fact 2]\\n- [fact 3]\\n- [fact 4]\\nWHY_TRENDING: [1-2 sentences on why this is hot news]\\nSOURCES:\\n- [source URL 1]\\n- [source URL 2]`\n  }\n};"
+      },
+      "id": "pickStory",
+      "name": "Pick Best Story",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nreturn {\n  json: {\n    rawStory: data.combinedPrompt,\n    redditSummary: data.redditSummary,\n    hnSummary: data.hnSummary,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "parseAgent",
+      "name": "Prepare Story Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-5",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a tech news researcher and YouTube Shorts scriptwriter. You analyze trending tech news and write punchy, engaging scripts. Always respond with valid JSON only, no markdown code blocks."
+            },
+            {
+              "content": "=First, analyze these trending tech stories and pick the SINGLE best one for a YouTube Short:\n\n{{ $json.rawStory }}\n\nNow write a 45-second YouTube Short script about that story. Respond with ONLY valid JSON:\n{\n  \"SCRIPT\": \"[80-95 word narration. Hook (3s, question or bold claim) → Story (30s, key facts) → Takeaway (12s, why it matters)]\",\n  \"TITLE\": \"[Catchy title under 70 chars]\",\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\n  \"IMAGE_PROMPTS\": [\n    \"[DALL-E prompt 1: vertical 9:16 image, vibrant, tech-themed, no text]\",\n    \"[DALL-E prompt 2: vertical 9:16 image, vibrant, tech-themed, no text]\",\n    \"[DALL-E prompt 3: vertical 9:16 image, vibrant, tech-themed, no text]\",\n    \"[DALL-E prompt 4: vertical 9:16 image, vibrant, tech-themed, no text]\"\n  ]\n}"
+            }
+          ]
+        },
+        "options": {},
+        "requestOptions": {}
+      },
+      "id": "scriptGen",
+      "name": "Generate Script (GPT-5)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json.content || $input.first().json.message?.content || '';\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from GPT-5 response: ' + response.substring(0, 200));\n  }\n}\n\nif (!parsed.SCRIPT) throw new Error('Missing SCRIPT in response');\nif (!parsed.TITLE) throw new Error('Missing TITLE in response');\nif (!parsed.IMAGE_PROMPTS || !Array.isArray(parsed.IMAGE_PROMPTS)) throw new Error('Missing IMAGE_PROMPTS array');\n\nconst wordCount = parsed.SCRIPT.split(/\\s+/).length;\n\nreturn {\n  json: {\n    script: parsed.SCRIPT,\n    title: parsed.TITLE,\n    description: parsed.DESCRIPTION || '',\n    tags: parsed.TAGS || [],\n    imagePrompts: parsed.IMAGE_PROMPTS,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "parseScript",
+      "name": "Parse Script JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "imagePrompts",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "script,title,description,tags",
+        "options": {}
+      },
+      "id": "splitImages",
+      "name": "Split Image Prompts",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/generations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"dall-e-3\",\n  \"prompt\": \"{{ $json.imagePrompts }}\",\n  \"size\": \"1024x1792\",\n  \"n\": 1\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "generateImages",
+      "name": "Generate Images (DALL-E 3)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst imageUrls = items.map(item => {\n  const data = item.json.data;\n  if (data && data.length > 0) {\n    return data[0].url;\n  }\n  return '';\n});\n\nreturn {\n  json: {\n    imageUrls: imageUrls\n  }\n};"
+      },
+      "id": "collectImages",
+      "name": "Collect All Images",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/speech",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'tts-1', input: $('Parse Script JSON').first().json.script, voice: 'onyx', response_format: 'mp3' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "voiceover"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "voiceover",
+      "name": "Generate Voiceover (TTS)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lightweight: just extract imageUrls and set binary filename (no buffer loading)\nconst imageUrls = $('Collect All Images').first().json.imageUrls || [];\nconst binary = $input.first().binary || {};\n\n// Set proper filename on the voiceover binary metadata\n// This does NOT load the binary data into memory\nif (binary.voiceover) {\n  binary.voiceover.fileName = 'voiceover.mp3';\n  binary.voiceover.mimeType = 'audio/mpeg';\n}\n\nreturn {\n  json: { imageUrls },\n  binary: binary\n};"
+      },
+      "id": "prepareVideoData",
+      "name": "Prepare Video Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://tmpfiles.org/api/v1/upload",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "voiceover"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "uploadAudio",
+      "name": "Upload Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const imageUrls = $('Prepare Video Data').first().json.imageUrls || [];\nconst response = $input.first().json;\n\nlet audioUrl = '';\nif (response.status === 'success' && response.data?.url) {\n  audioUrl = response.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');\n} else {\n  throw new Error('Audio upload to tmpfiles.org failed: ' + JSON.stringify(response).substring(0, 500));\n}\n\nreturn {\n  json: {\n    imageUrls,\n    audioUrl\n  }\n};"
+      },
+      "id": "buildVideoPayload",
+      "name": "Build Video Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2368,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.creatomate.com/v1/renders",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ template_id: 'YOUR_TEMPLATE_ID', modifications: { 'Image-1.source': $json.imageUrls[0], 'Image-2.source': $json.imageUrls[1], 'Image-3.source': $json.imageUrls[2], 'Image-4.source': $json.imageUrls[3], 'Audio.source': $json.audioUrl } }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "creatomateRender",
+      "name": "Compose Video (Creatomate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 90
+      },
+      "id": "waitRender",
+      "name": "Wait for Rendering",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2768,
+        0
+      ],
+      "webhookId": "08df6778-be14-450f-8f32-7ebc0e67ac91"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.creatomate.com/v1/renders/{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "checkRender",
+      "name": "Check Render Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const render = $json;\n\nif (render.status === 'failed') {\n  throw new Error(`Creatomate render FAILED: ${render.error_message || 'Unknown error'}`);\n}\n\nif (render.status !== 'succeeded') {\n  throw new Error(`Render not complete (status: ${render.status}). Try increasing wait time.`);\n}\n\nreturn { json: { id: render.id, status: render.status, url: render.url } };"
+      },
+      "id": "validateRender",
+      "name": "Validate Render",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "video"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "downloadVideo",
+      "name": "Download Rendered Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const scriptData = $('Parse Script JSON').first().json;\n\nconst title = (scriptData.title || 'Tech News Today') + ' #Shorts';\nconst description = (scriptData.description || '') + '\\n\\n#Shorts #TechNews #AI #Technology';\nconst tags = scriptData.tags || ['tech', 'news', 'AI', 'shorts'];\n\nconst finalTitle = title.length > 100 ? title.substring(0, 97) + '...' : title;\n\nreturn {\n  json: {\n    title: finalTitle,\n    description: description,\n    tags: tags,\n    categoryId: '28',\n    privacyStatus: 'public',\n    selfDeclaredMadeForKids: false\n  },\n  binary: $input.first().binary\n};"
+      },
+      "id": "prepareYT",
+      "name": "Prepare YouTube Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3568,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "={{ $json.categoryId }}",
+        "binaryProperty": "video",
+        "options": {
+          "description": "={{ $json.description }}",
+          "notifySubscribers": true,
+          "privacyStatus": "public",
+          "selfDeclaredMadeForKids": false,
+          "tags": "={{ $json.tags.join(',') }}"
+        }
+      },
+      "id": "youtubeUpload",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        3760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "playlistItem",
+        "playlistId": "YOUR_PLAYLIST_ID",
+        "videoId": "={{ $json.uploadId || $json.id || $json.videoId }}",
+        "options": {}
+      },
+      "id": "addToPlaylist",
+      "name": "Add to Playlist",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        3968,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const videoData = $input.first().json;\nconst videoId = videoData.uploadId || videoData.id || videoData.videoId || 'unknown';\nconst videoUrl = `https://youtube.com/shorts/${videoId}`;\n\nreturn {\n  json: {\n    success: true,\n    message: `YouTube Short published successfully!`,\n    videoUrl: videoUrl,\n    videoId: videoId,\n    title: videoData.snippet?.title || videoData.title || '',\n    uploadTime: new Date().toISOString()\n  }\n};"
+      },
+      "id": "successOutput",
+      "name": "Success Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4176,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Reddit Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reddit Posts": {
+      "main": [
+        [
+          {
+            "node": "Format Reddit Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reddit Data": {
+      "main": [
+        [
+          {
+            "node": "Fetch HN Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch HN Posts": {
+      "main": [
+        [
+          {
+            "node": "Pick Best Story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Best Story": {
+      "main": [
+        [
+          {
+            "node": "Prepare Story Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Story Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Script (GPT-5)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Script (GPT-5)": {
+      "main": [
+        [
+          {
+            "node": "Parse Script JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Script JSON": {
+      "main": [
+        [
+          {
+            "node": "Split Image Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Image Prompts": {
+      "main": [
+        [
+          {
+            "node": "Generate Images (DALL-E 3)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Images (DALL-E 3)": {
+      "main": [
+        [
+          {
+            "node": "Collect All Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect All Images": {
+      "main": [
+        [
+          {
+            "node": "Generate Voiceover (TTS)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Voiceover (TTS)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Video Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Video Data": {
+      "main": [
+        [
+          {
+            "node": "Upload Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Audio": {
+      "main": [
+        [
+          {
+            "node": "Build Video Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Video Payload": {
+      "main": [
+        [
+          {
+            "node": "Compose Video (Creatomate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Video (Creatomate)": {
+      "main": [
+        [
+          {
+            "node": "Wait for Rendering",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Rendering": {
+      "main": [
+        [
+          {
+            "node": "Check Render Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Render Status": {
+      "main": [
+        [
+          {
+            "node": "Validate Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Render": {
+      "main": [
+        [
+          {
+            "node": "Download Rendered Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Rendered Video": {
+      "main": [
+        [
+          {
+            "node": "Prepare YouTube Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare YouTube Metadata": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Add to Playlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Playlist": {
+      "main": [
+        [
+          {
+            "node": "Success Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
