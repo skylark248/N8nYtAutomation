@@ -14,13 +14,17 @@
     },
     {
       "parameters": {
-        "url": "https://www.reddit.com/r/technology/hot.json?limit=15",
+        "url": "https://old.reddit.com/r/technology/hot.json?limit=15",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "n8n-bot/1.0"
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
             }
           ]
         },

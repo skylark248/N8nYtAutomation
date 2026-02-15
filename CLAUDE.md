@@ -191,8 +191,8 @@ Add to Playlist              -> Success Output                (main)
 ### Key Node Implementation Details
 
 **Fetch Reddit Posts** (HTTP Request):
-- URL: `https://www.reddit.com/r/technology/hot.json?limit=15`
-- Header: `User-Agent: n8n-bot/1.0` (required by Reddit API)
+- URL: `https://old.reddit.com/r/technology/hot.json?limit=15`
+- Headers: `User-Agent: Mozilla/5.0 (Chrome browser UA)`, `Accept: application/json` (Reddit blocks bot UAs with 403)
 - Timeout: 10000ms
 
 **Format Reddit Data** (Code node):
