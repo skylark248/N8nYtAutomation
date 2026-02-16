@@ -2,129 +2,74 @@
 
 ## Prerequisites
 - n8n running locally in Docker at http://localhost:5678
-- OpenAI account with API billing enabled
+- Google AI Studio API key (free) — [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - Google account with a YouTube channel
-- Creatomate account (free tier)
+- Docker with FFmpeg support (see Step 1)
 
 ---
 
-## Credential 1: OpenAI API
+## Step 1: Start n8n with FFmpeg Support
 
-**Used by**: Generate Script (GPT-5)
+The workflow uses FFmpeg to compose video locally. Start n8n with the required environment variables:
+
+```bash
+docker run --rm --name n8n -p 5678:5678 \
+  -e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os \
+  -v $(pwd):/home/node/.n8n \
+  n8nio/n8n
+```
+
+Then install FFmpeg in the running container:
+```bash
+docker exec n8n apk add --no-cache ffmpeg
+```
+
+Open [http://localhost:5678](http://localhost:5678) and create an account when prompted.
+
+---
+
+## Credential 1: Google AI Studio API Key (Gemini)
+
+**Used by**: Generate Script (Gemini), Generate Images (Gemini), Generate Voiceover (Gemini TTS)
 
 ### Get API Key
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign in (same account as ChatGPT, but API billing is separate)
-3. Click **"API keys"** in the left sidebar
-4. Click **"Create new secret key"**
-5. Copy the key (starts with `sk-...`) — you won't see it again
+1. Go to [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
+2. Sign in with your Google account
+3. Click **"Create API Key"**
+4. Copy the key — you can always view it again from this page
 
-### Add Billing
-1. Go to platform.openai.com → **Settings** → **Billing**
-2. Click **"Add payment method"**
-3. Add $10-20 to start (prepaid credits, pay-per-use)
-4. This is separate from your ChatGPT subscription
+**Cost**: Free. No billing required. Google AI Studio provides generous free tier limits.
 
-### Add to n8n
+### Add to n8n Workflow
+The API key is passed directly in the URL query parameter — no n8n credential setup needed.
+
 1. Open your imported workflow in n8n
-2. Click on **"Generate Script (GPT-5)"** node
-3. Click **"Credential to connect with"** → **"Create New Credential"**
-4. Select **"OpenAI API"**
-5. Paste your API key
-6. Click **"Save"**
+2. Open each of these 3 nodes and replace `YOUR_GEMINI_API_KEY` in the URL:
+   - **"Generate Script (Gemini)"** — URL contains `?key=YOUR_GEMINI_API_KEY`
+   - **"Generate Images (Gemini)"** — URL contains `?key=YOUR_GEMINI_API_KEY`
+   - **"Generate Voiceover (Gemini TTS)"** — URL contains `?key=YOUR_GEMINI_API_KEY`
+3. Save the workflow
 
 ### Verify
 ```bash
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer sk-your-key-here" \
-  | head -20
+curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY" | head -20
 ```
-Should return a list of available models.
+Should return a list of available Gemini models.
+
+### Free Tier Limits (as of Feb 2026)
+| Model | Limit |
+|---|---|
+| Gemini 2.0 Flash (script) | 15 RPM, 1,500 RPD |
+| Gemini 2.5 Flash Image (images) | 10 RPM |
+| Gemini 2.5 Flash TTS (voiceover) | 10 RPM |
+
+These limits are more than enough for generating 1-2 Shorts per day.
 
 ---
 
-## Credential 2: HTTP Header Auth (OpenAI TTS)
+## Credential 2: YouTube OAuth2
 
-**Used by**: Generate Images (DALL-E 3), Generate Voiceover (TTS)
-
-This is the same API key as above, but wrapped in Header Auth format because the DALL-E and TTS nodes use raw HTTP Requests.
-
-### Add to n8n
-1. Click on the **"Generate Voiceover (TTS)"** node
-2. Click **"Credential to connect with"** → **"Create New Credential"**
-3. Select **"Header Auth"**
-4. Fill in:
-   - **Name**: `Authorization`
-   - **Value**: `Bearer sk-your-same-openai-api-key`
-5. Click **"Save"**
-
----
-
-## Credential 3: Creatomate (Video Composition)
-
-**Used by**: Compose Video (Creatomate), Check Render Status
-
-### Create Account
-1. Go to [creatomate.com](https://creatomate.com)
-2. Click **"Start Free Trial"** (no credit card needed)
-3. Sign up with email or Google
-
-### Get API Key
-1. After login, click your **profile icon** (top-right) → **"Project Settings"**
-2. Or go to **Settings** → **API**
-3. Copy your **API Key**
-
-### Create Slideshow Template
-1. Click **"New Template"** → **"Blank"**
-2. Set canvas:
-   - Width: **1080**
-   - Height: **1920**
-   - (9:16 vertical — YouTube Shorts format)
-3. Set duration: **45 seconds**
-4. Add 4 Image elements:
-   - Click **"+"** → **"Image"**
-   - Name each one exactly: `Image-1`, `Image-2`, `Image-3`, `Image-4`
-   - Each image should:
-     - Fill the full canvas (1080x1920)
-     - Display for ~10-11 seconds
-     - Have a fade/dissolve transition to the next
-   - Use any placeholder image while designing — the workflow replaces them at runtime
-5. Add 1 Audio element:
-   - Click **"+"** → **"Audio"**
-   - Name it exactly: `Audio`
-   - Set to play for the full 45 seconds
-6. Click **"Save"**
-
-### Get Template ID
-- From the URL: `https://creatomate.com/projects/.../templates/TEMPLATE_ID`
-- The template ID is the last UUID segment
-- Example: `d81159ea-05df-4892-b043-2980aeb4e0bf`
-
-### Add Credential to n8n
-1. Click on the **"Compose Video (Creatomate)"** node
-2. Click **"Credential to connect with"** → **"Create New Credential"**
-3. Select **"Header Auth"**
-4. Fill in:
-   - **Name**: `Authorization`
-   - **Value**: `Bearer your-creatomate-api-key`
-5. Click **"Save"**
-
-### Update Template ID in Workflow
-1. Still in the **"Compose Video (Creatomate)"** node
-2. Find `YOUR_TEMPLATE_ID` in the JSON body
-3. Replace with your actual template ID
-4. Save the workflow
-
-### Free Tier Limits
-- 10 renders/month
-- 1080p max resolution
-- Check creatomate.com/pricing for current terms
-
----
-
-## Credential 4: YouTube OAuth2
-
-**Used by**: Upload to YouTube node
+**Used by**: Upload to YouTube, Add to Playlist
 
 ### Step 1: Create Google Cloud Project
 1. Go to [console.cloud.google.com](https://console.cloud.google.com)
@@ -155,7 +100,7 @@ This is the same API key as above, but wrapped in Header Auth format because the
    - Click **"Add Users"**
    - Add the **exact Google email** you'll use to sign in (e.g., `your-email@gmail.com`)
    - Click **"Save and Continue"**
-   - ⚠️ If you already skipped this step and got "Access blocked": Go to **OAuth consent screen** → **Audience** tab → **Add Users** → add your email
+   - If you already skipped this step and got "Access blocked": Go to **OAuth consent screen** → **Audience** tab → **Add Users** → add your email
 7. Click **"Back to Dashboard"**
 
 ### Step 4: Create OAuth2 Credentials
@@ -232,15 +177,15 @@ If you don't want videos added to a playlist:
 
 ### Run the workflow
 1. Click **"Test Workflow"** (play button in top-right)
-2. Wait 8-12 minutes for full execution
+2. Wait 3-5 minutes for full execution
 3. Watch the execution progress — each node lights up green when done
 
 ### Verify
 - [ ] Reddit and HN data were fetched successfully
-- [ ] GPT-5 picked a story and generated a script with ~90 words
-- [ ] 4 vertical image URLs were generated by DALL-E 3
-- [ ] Voiceover audio was created
-- [ ] Video was composed by Creatomate (render status: succeeded)
+- [ ] Gemini 2.0 Flash picked a story and generated a script with ~90 words + 8 image prompts
+- [ ] 8 vertical images were generated by Gemini 2.5 Flash Image (base64)
+- [ ] Voiceover audio was created by Gemini 2.5 Flash TTS
+- [ ] FFmpeg composed video with Ken Burns zoom/pan effect (~45 seconds)
 - [ ] Video appeared in your YouTube Studio as unlisted
 - [ ] Video was added to your playlist (if configured)
 
@@ -253,23 +198,25 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 
 | # | Credential | Type | Nodes Using It | Cost |
 |---|---|---|---|---|
-| 1 | OpenAI API | API Key | Script Gen (GPT-5) | ~$0.04/video |
-| 2 | Header Auth (OpenAI) | Header Auth | DALL-E 3, Voiceover (TTS) | ~$0.16/video |
-| 3 | Header Auth (Creatomate) | Header Auth | Compose Video, Check Render | Free (10/month) |
-| 4 | YouTube OAuth2 | OAuth2 | Upload to YouTube, Add to Playlist | Free |
+| 1 | Google AI Studio (Gemini) | API Key in URL | Script Gen, Image Gen, TTS | $0.00 (free tier) |
+| 2 | YouTube OAuth2 | OAuth2 | Upload to YouTube, Add to Playlist | Free |
 
 ---
 
 ## Troubleshooting
 
-### "Invalid API key" on OpenAI nodes
-- Verify the key at platform.openai.com → API Keys
-- Check you have billing credits remaining
-- Make sure you're using the API key, not the ChatGPT session token
+### "API key not valid" on Gemini nodes
+- Verify the key at [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
+- Make sure it's not expired or deleted
+- Check the URL: `?key=YOUR_ACTUAL_KEY` (no quotes, no spaces)
 
-### "Unauthorized" on Creatomate
-- Check Header Auth value is exactly: `Bearer your-key` (with space after Bearer)
-- Verify the API key in Creatomate dashboard
+### FFmpeg "command not found"
+- Install FFmpeg in the running container: `docker exec n8n apk add --no-cache ffmpeg`
+- This must be done each time you restart the Docker container
+
+### "Cannot require 'child_process'"
+- The Docker container must be started with: `-e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
+- Restart Docker with the correct command (see Step 1)
 
 ### "OAuth token expired" on YouTube
 - Go to the credential in n8n → click "Sign in with Google" again
@@ -295,15 +242,20 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 - Wait until midnight Pacific Time for quota reset
 - Or request a quota increase in Google Cloud Console
 
+### Gemini rate limits
+- If you see 429 errors, you've hit the free tier rate limit
+- Wait a few minutes and try again
+- Limits reset per minute (RPM) and per day (RPD)
+
 ---
 
-## Migrating to a Different n8n Instance
+## Migrating to Another n8n Instance
 
 ### Method 1: Export/Import via n8n UI (Easiest)
 
 **Export from current instance:**
 1. Open your workflow in n8n
-2. Click the **three dots menu (⋮)** in the top-right → **"Download"**
+2. Click the **three dots menu** in the top-right → **"Download"**
 3. This saves a `.json` file with the complete workflow (nodes, connections, settings)
 4. Credentials are **NOT included** in the export (for security)
 
@@ -312,14 +264,12 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 2. Click **"Add workflow"** (or **"Import from file"** on the workflows page)
 3. Select the downloaded `.json` file
 4. The workflow will appear with all nodes and connections intact
-5. **Re-configure all 4 credentials** on the new instance (see credential setup sections above)
-6. Update the Creatomate template ID if using a different Creatomate account
+5. **Re-configure credentials** on the new instance (see credential setup sections above)
 
 ### Method 2: n8n API (Programmatic)
 
 **Export via API:**
 ```bash
-# Export workflow JSON from current instance
 curl -H "X-N8N-API-KEY: $N8N_API_KEY" \
   http://localhost:5678/api/v1/workflows/YOUR_WORKFLOW_ID \
   -o youtube-shorts-workflow.json
@@ -327,7 +277,6 @@ curl -H "X-N8N-API-KEY: $N8N_API_KEY" \
 
 **Import via API:**
 ```bash
-# Import to new instance
 curl -X POST \
   -H "X-N8N-API-KEY: $N8N_API_KEY" \
   -H "Content-Type: application/json" \
@@ -335,15 +284,7 @@ curl -X POST \
   http://your-n8n-url:5678/api/v1/workflows
 ```
 
-### Method 3: Recreate with Claude Code + MCP
-
-If you have Claude Code with the n8n MCP server configured on the new instance:
-1. Share the `docs/workflow-reference.md` file with Claude
-2. Ask Claude to recreate the workflow using `n8n_create_workflow`
-3. Claude can rebuild the entire 24-node workflow from the documentation
-4. This is the power of having the workflow fully documented in markdown
-
-### Method 4: n8n Cloud Migration
+### Method 3: n8n Cloud Migration
 
 If migrating from Docker to n8n Cloud:
 1. Export the workflow JSON from Docker instance (Method 1 or 2)
@@ -353,19 +294,19 @@ If migrating from Docker to n8n Cloud:
 5. Replace **Manual Trigger** with **Schedule Trigger** for daily automation:
    - Edit the first node → change type to Schedule Trigger
    - Set cron: `0 9 * * *` (daily at 9 AM)
-6. Activate the workflow
+6. Note: FFmpeg must be available on the cloud instance or replaced with an external video API
+7. Activate the workflow
 
 ### After Migration Checklist
 
 On the new instance, you must:
-- [ ] Create and assign **OpenAI API** credential (API key)
-- [ ] Create and assign **HTTP Header Auth** for TTS (`Authorization: Bearer sk-...`)
-- [ ] Create and assign **HTTP Header Auth** for Creatomate (`Authorization: Bearer cm-...`)
+- [ ] Replace `YOUR_GEMINI_API_KEY` in 3 nodes (Generate Script, Generate Images, Generate Voiceover)
 - [ ] Create and assign **YouTube OAuth2** credential (new OAuth2 client or reuse existing)
-- [ ] Update **Creatomate template ID** in the "Compose Video" node (if using a different account)
 - [ ] Update **playlist ID** in the "Add to Playlist" node (or remove the node if not needed)
 - [ ] Update the **YouTube OAuth2 redirect URI** to match the new instance URL
   - Docker: `http://localhost:5678/rest/oauth2-credential/callback`
   - Cloud: `https://your-instance.app.n8n.cloud/rest/oauth2-credential/callback`
+- [ ] Ensure FFmpeg is installed (`apk add --no-cache ffmpeg` on Alpine, `apt install ffmpeg` on Debian)
+- [ ] Ensure Docker has `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var
 - [ ] Test with `privacyStatus: "unlisted"` before going public
 - [ ] Verify all nodes execute successfully end-to-end

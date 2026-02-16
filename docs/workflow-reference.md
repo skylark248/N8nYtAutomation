@@ -2,9 +2,9 @@
 
 ## Overview
 - **Trigger**: Manual (click to run)
-- **Nodes**: 24 | **Connections**: 23
-- **Estimated Runtime**: 8-12 minutes per video
-- **Monthly Cost**: ~$7.23 (OpenAI) + $0 (Creatomate free tier, 10 videos)
+- **Nodes**: 17 | **Connections**: 16
+- **Estimated Runtime**: 3-5 minutes per video
+- **Monthly Cost**: $0.00 (all free APIs + local FFmpeg)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
 
 ## Pipeline
@@ -13,7 +13,7 @@
 Manual Trigger
     |
     v
-[Fetch Reddit Posts] -- GET reddit.com/r/technology/hot.json
+[Fetch Reddit Posts] -- GET old.reddit.com/r/technology/hot.json
     |
     v
 [Format Reddit Data] -- Code node: extracts top 10 post summaries
@@ -25,49 +25,28 @@ Manual Trigger
 [Pick Best Story] -- Code node: combines Reddit + HN data into prompt
     |
     v
-[Prepare Story Data] -- Code node: formats combined prompt for GPT-5
+[Prepare Story Data] -- Code node: formats combined prompt for Gemini
     |
     v
-[Generate Script (GPT-5)] -- Creates script, title, description, tags, image prompts
+[Generate Script (Gemini)] -- Gemini 2.0 Flash: script, title, description, tags, 8 image prompts
     |
     v
-[Parse Script JSON] -- Code node: parses GPT-5 JSON response
+[Parse Script JSON] -- Code node: parses Gemini JSON response
     |
     v
 [Split Image Prompts] -- Splits array into individual items
     |
     v
-[Generate Images (DALL-E 3)] -- 4x vertical images via HTTP Request (returns URLs)
+[Generate Images (Gemini)] -- Gemini 2.5 Flash Image: 8x vertical images (base64)
     |
     v
-[Collect All Images] -- Code node: extracts image URLs into array
+[Collect All Images] -- Code node: extracts base64 image data into array
     |
     v
-[Generate Voiceover (TTS)] -- OpenAI TTS API, voice: onyx, mp3 binary
+[Generate Voiceover (Gemini TTS)] -- Gemini 2.5 Flash TTS: PCM audio (base64)
     |
     v
-[Prepare Video Data] -- Code node: sets binary filename, extracts image URLs
-    |
-    v
-[Upload Audio] -- HTTP POST: uploads voiceover mp3 to tmpfiles.org
-    |
-    v
-[Build Video Payload] -- Code node: combines image URLs + audio download URL
-    |
-    v
-[Compose Video (Creatomate)] -- HTTP POST: sends image URLs + audio URL to template
-    |
-    v
-[Wait for Rendering] -- 90 seconds
-    |
-    v
-[Check Render Status] -- GET /renders/{id} to verify completion
-    |
-    v
-[Validate Render] -- Code node: checks status === 'succeeded'
-    |
-    v
-[Download Rendered Video] -- GET rendered MP4
+[Compose Video (FFmpeg)] -- Code node: Ken Burns zoom/pan + crossfade + audio overlay
     |
     v
 [Prepare YouTube Metadata] -- Adds #Shorts, sets category, formats tags
@@ -96,10 +75,13 @@ Manual Trigger
 **Parameters**:
 ```json
 {
-  "url": "https://www.reddit.com/r/technology/hot.json?limit=15",
+  "url": "https://old.reddit.com/r/technology/hot.json?limit=15",
   "sendHeaders": true,
   "headerParameters": {
-    "parameters": [{ "name": "User-Agent", "value": "n8n-bot/1.0" }]
+    "parameters": [
+      { "name": "User-Agent", "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
+      { "name": "Accept", "value": "application/json" }
+    ]
   },
   "options": { "timeout": 10000 }
 }
@@ -182,170 +164,162 @@ return {
 };
 ```
 
-### Node 7: Generate Script (GPT-5)
-- **Type**: `n8n-nodes-base.openAi` (v1)
+### Node 7: Generate Script (Gemini)
+- **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `scriptGen`
-- **Credential**: OpenAI API
+- **Auth**: API key in URL query parameter (no n8n credential)
 
-**Note**: GPT-5 does not support custom `temperature` or `max_tokens` parameters. Use `options: {}`.
+**Parameters**:
+- Method: POST
+- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY`
+- Body: JSON with `contents`, `systemInstruction`, and `generationConfig`
+- `responseMimeType: 'application/json'` forces structured JSON output
+- System prompt: "tech news researcher and YouTube Shorts scriptwriter"
+- Requests: SCRIPT (80-95 words), TITLE (under 70 chars), DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
+- Timeout: 30000ms
 
 ### Node 8: Parse Script JSON
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `parseScript`
 
-Parses GPT-5 JSON response, extracts SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS. Falls back to regex extraction if response isn't clean JSON.
+Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Extracts SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS. Falls back to regex extraction if response isn't clean JSON. Validates at least 4 image prompts.
 
 ### Node 9: Split Image Prompts
 - **Type**: `n8n-nodes-base.splitOut` (v1)
 - **ID**: `splitImages`
 
-Splits `imagePrompts` array into individual items for parallel DALL-E generation.
+Splits `imagePrompts` array into individual items for parallel image generation. Includes `script`, `title`, `description`, `tags` fields.
 
-### Node 10: Generate Images (DALL-E 3)
+### Node 10: Generate Images (Gemini)
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `generateImages`
-- **Credential**: HTTP Header Auth (OpenAI key)
+- **Auth**: API key in URL query parameter (no n8n credential)
 
-POST to `https://api.openai.com/v1/images/generations` with model `dall-e-3`, size `1024x1792`. Returns image URLs (not binary).
+**Parameters**:
+- Method: POST
+- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=YOUR_GEMINI_API_KEY`
+- Body: `{ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }`
+- Returns base64 image data in `candidates[0].content.parts[].inlineData.data`
+- Timeout: 60000ms
 
 ### Node 11: Collect All Images
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `collectImages`
 
-Collects all DALL-E image URLs into a single `imageUrls` array.
+Collects all Gemini image base64 data into a single `imageBase64Array`. Iterates through candidates/parts looking for `inlineData` with image mimeType.
 
-### Node 12: Generate Voiceover (TTS)
+### Node 12: Generate Voiceover (Gemini TTS)
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `voiceover`
-- **Credential**: HTTP Header Auth (OpenAI key)
+- **Auth**: API key in URL query parameter (no n8n credential)
 
-POST to `https://api.openai.com/v1/audio/speech`. Voice: `onyx`. Output: binary MP3 as `voiceover` property.
+**Parameters**:
+- Method: POST
+- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=YOUR_GEMINI_API_KEY`
+- Body:
+```json
+{
+  "contents": [{ "parts": [{ "text": "Read this as an engaging, energetic tech news narrator: [SCRIPT]" }] }],
+  "generationConfig": {
+    "responseModalities": ["AUDIO"],
+    "speechConfig": {
+      "voiceConfig": {
+        "prebuiltVoiceConfig": { "voiceName": "Kore" }
+      }
+    }
+  }
+}
+```
+- Returns base64 PCM audio (24kHz, 16-bit, mono) in `candidates[0].content.parts[0].inlineData.data`
+- Voice options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr`
+- Timeout: 30000ms
 
-### Node 13: Prepare Video Data
+### Node 13: Compose Video (FFmpeg)
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `prepareVideoData`
+- **ID**: `composeVideo`
+- **Requires**: `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` and FFmpeg installed
 
-Lightweight node: extracts `imageUrls` from Collect All Images, sets binary filename to `voiceover.mp3`. Does NOT load binary data into memory (avoids OOM).
+**Logic**:
+1. Writes 8 base64 images to `/tmp/n8n_video_*/img_0.png` ... `img_7.png`
+2. Writes base64 PCM audio → converts to WAV via FFmpeg (`-f s16le -ar 24000 -ac 1`)
+3. Probes audio duration to calculate per-image timing
+4. Applies Ken Burns effect: alternating zoom-in/zoom-out on each image
+5. Crossfade transitions (0.5s) between images
+6. Overlays audio track
+7. Output: 1080x1920 vertical MP4 (libx264, CRF 23, AAC audio)
+8. Returns video as n8n binary data
+9. Cleans up temp files
 
-### Node 14: Upload Audio
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2)
-- **ID**: `uploadAudio`
+**Estimated render time**: 30-60 seconds for ~45-sec video at 1080x1920.
 
-POST multipart form-data to `https://tmpfiles.org/api/v1/upload`. Uploads voiceover binary with proper `.mp3` filename. Creatomate requires real download URLs (no data URIs).
-
-### Node 15: Build Video Payload
+### Node 14: Prepare YouTube Metadata
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `buildVideoPayload`
+- **ID**: `prepareYT`
 
-Combines `imageUrls` from Prepare Video Data with `audioUrl` from tmpfiles.org upload response. Inserts `/dl/` into tmpfiles.org URL for direct download.
+Appends `#Shorts` to title, adds hashtags to description, sets category 28 (Science & Technology), truncates title to 100 chars. Passes through binary video data.
 
-### Node 16: Compose Video (Creatomate)
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2)
-- **ID**: `creatomateRender`
-- **Credential**: HTTP Header Auth (Creatomate key)
+### Node 15: Upload to YouTube
+- **Type**: `n8n-nodes-base.youTube` (v1)
+- **ID**: `youtubeUpload`
+- **Credential**: YouTube OAuth2 API
 
-POST to `https://api.creatomate.com/v1/renders`. Sends template_id + modifications for Image-1 through Image-4 sources and Audio source.
+Resource: `video`, Operation: `upload`. Binary property: `video`. Privacy: `public` (change to `unlisted` for testing). Category: 28. Tags joined with commas, notifySubscribers: true.
 
-**SETUP REQUIRED**: Replace `YOUR_TEMPLATE_ID`. Template elements must have Provider set to **URL** with **Dynamic Source** checked.
-
-### Node 17: Wait for Rendering
-- **Type**: `n8n-nodes-base.wait` (v1.1) — 90 seconds
-
-### Node 18: Check Render Status
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2) — GET render by ID
-
-### Node 19: Validate Render
-- **Type**: `n8n-nodes-base.code` (v2) — Throws error if status !== 'succeeded'
-
-### Node 20: Download Rendered Video
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2) — GET rendered MP4 as binary
-
-### Node 21: Prepare YouTube Metadata
-- **Type**: `n8n-nodes-base.code` (v2) — Appends #Shorts to title, sets category 28 (Science & Technology)
-
-### Node 22: Upload to YouTube
-- **Type**: `n8n-nodes-base.youTube` (v1) — Uploads video binary with metadata. Privacy: public.
-
-### Node 23: Add to Playlist
+### Node 16: Add to Playlist
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `addToPlaylist`
 - **Credential**: YouTube OAuth2 API (same as Upload to YouTube)
 
-Adds the uploaded video to a specified YouTube playlist. Uses `playlistItem` resource with `add` operation.
+Resource: `playlistItem`. `playlistId`: `YOUR_PLAYLIST_ID` — **SETUP REQUIRED**. `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`.
 
-**SETUP REQUIRED**: Replace `YOUR_PLAYLIST_ID` with your actual YouTube playlist ID (starts with `PL...`). To find it: YouTube Studio → Playlists → click your playlist → copy the ID from the URL.
+### Node 17: Success Output
+- **Type**: `n8n-nodes-base.code` (v2)
+- **ID**: `successOutput`
 
-### Node 24: Success Output
-- **Type**: `n8n-nodes-base.code` (v2) — Returns `videoUrl`, `videoId`, `uploadTime`. Reads `uploadId` from YouTube response.
+Returns `videoUrl`, `videoId`, `uploadTime`. Constructs YouTube Shorts URL from video ID.
 
 ## Connection Map
 
 ```
-Source Node                  -> Target Node                  | Type
---------------------------------------------------------------------------------
-Manual Trigger               -> Fetch Reddit Posts            | main
-Fetch Reddit Posts           -> Format Reddit Data            | main
-Format Reddit Data           -> Fetch HN Posts                | main
-Fetch HN Posts               -> Pick Best Story               | main
-Pick Best Story              -> Prepare Story Data            | main
-Prepare Story Data           -> Generate Script (GPT-5)       | main
-Generate Script (GPT-5)      -> Parse Script JSON             | main
-Parse Script JSON            -> Split Image Prompts           | main
-Split Image Prompts          -> Generate Images (DALL-E 3)    | main
-Generate Images (DALL-E 3)   -> Collect All Images            | main
-Collect All Images           -> Generate Voiceover (TTS)      | main
-Generate Voiceover (TTS)     -> Prepare Video Data            | main
-Prepare Video Data           -> Upload Audio                  | main
-Upload Audio                 -> Build Video Payload           | main
-Build Video Payload          -> Compose Video (Creatomate)    | main
-Compose Video (Creatomate)   -> Wait for Rendering            | main
-Wait for Rendering           -> Check Render Status           | main
-Check Render Status          -> Validate Render               | main
-Validate Render              -> Download Rendered Video       | main
-Download Rendered Video      -> Prepare YouTube Metadata      | main
-Prepare YouTube Metadata     -> Upload to YouTube             | main
-Upload to YouTube            -> Add to Playlist               | main
-Add to Playlist              -> Success Output                | main
+Source Node                       -> Target Node                       | Type
+---------------------------------------------------------------------------------
+Manual Trigger                    -> Fetch Reddit Posts                 | main
+Fetch Reddit Posts                -> Format Reddit Data                 | main
+Format Reddit Data                -> Fetch HN Posts                     | main
+Fetch HN Posts                    -> Pick Best Story                    | main
+Pick Best Story                   -> Prepare Story Data                 | main
+Prepare Story Data                -> Generate Script (Gemini)           | main
+Generate Script (Gemini)          -> Parse Script JSON                  | main
+Parse Script JSON                 -> Split Image Prompts                | main
+Split Image Prompts               -> Generate Images (Gemini)           | main
+Generate Images (Gemini)          -> Collect All Images                 | main
+Collect All Images                -> Generate Voiceover (Gemini TTS)    | main
+Generate Voiceover (Gemini TTS)   -> Compose Video (FFmpeg)             | main
+Compose Video (FFmpeg)            -> Prepare YouTube Metadata            | main
+Prepare YouTube Metadata          -> Upload to YouTube                  | main
+Upload to YouTube                 -> Add to Playlist                    | main
+Add to Playlist                   -> Success Output                     | main
 ```
 
 ## Required Credentials
 
 | # | Credential Name | Type | Where to Get | Used By |
 |---|---|---|---|---|
-| 1 | OpenAI API | API Key | platform.openai.com -> API Keys | Generate Script (GPT-5) |
-| 2 | HTTP Header Auth (OpenAI) | Header Auth | Same key as above. Name: `Authorization`, Value: `Bearer sk-...` | DALL-E 3, Voiceover (TTS) |
-| 3 | HTTP Header Auth (Creatomate) | Header Auth | creatomate.com -> Dashboard -> API Key. Name: `Authorization`, Value: `Bearer cm-...` | Compose Video, Check Render Status |
-| 4 | YouTube OAuth2 API | OAuth2 | Google Cloud Console -> YouTube Data API v3 -> OAuth2 credentials | Upload to YouTube, Add to Playlist |
-
-## Creatomate Template Setup
-
-1. Sign up at creatomate.com (free tier: 10 renders/month)
-2. Create new template: 1080 x 1920 (9:16 vertical), 45 seconds
-3. Add elements:
-   - 4 image elements named `Image-1`, `Image-2`, `Image-3`, `Image-4`
-   - Each shows for ~10 seconds with fade transitions
-   - Set Provider to **URL**, check **Dynamic Source**
-   - 1 audio element named `Audio`
-   - Set Provider to **URL**, check **Dynamic Source**
-4. Copy the template ID from the URL
-5. Replace `YOUR_TEMPLATE_ID` in the Compose Video node
+| 1 | Google AI Studio (Gemini) | API Key in URL | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Script Gen, Image Gen, Voiceover TTS |
+| 2 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
 
 ## Troubleshooting
 
-### Audio upload / tmpfiles.org issues
-- tmpfiles.org requires proper file extension — Prepare Video Data sets filename to `voiceover.mp3`
-- If tmpfiles.org is down, any free file hosting with direct download URLs works
-- Creatomate does NOT support data URIs for audio — must be a real URL
+### FFmpeg / Video composition issues
+- FFmpeg must be installed in the Docker container: `docker exec n8n apk add --no-cache ffmpeg`
+- The Code node requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var
+- Temp files are written to `/tmp/` and cleaned up automatically
+- If n8n crashes with OOM, the video may be too large — check image count and duration
 
-### n8n crashes with out-of-memory
-- The Prepare Video Data node is intentionally lightweight (no `getBinaryDataBuffer`)
-- Audio upload is handled by HTTP Request node which manages memory natively
-- If n8n freezes: `docker restart n8n`
-
-### Creatomate render fails
-- Verify template_id, element names (`Image-1` through `Image-4`, `Audio`)
-- All elements must have Provider = **URL** with **Dynamic Source** checked
-- DALL-E image URLs expire after ~1 hour
+### Gemini API issues
+- "API key not valid": Verify at [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
+- 429 Too Many Requests: Free tier rate limit hit — wait a few minutes
+- Image generation returns text instead of image: Check `responseModalities: ['IMAGE', 'TEXT']` is set
 
 ### YouTube upload fails
 - Re-authorize OAuth2 if token expired
@@ -357,15 +331,16 @@ Add to Playlist              -> Success Output                | main
 | What | How |
 |---|---|
 | Change news sources | Edit Fetch Reddit Posts URL or Pick Best Story code |
-| Change script length | Edit Generate Script (GPT-5) prompt word count target |
-| Change TTS voice | Edit Generate Voiceover jsonBody `voice` field |
+| Change script length | Edit Generate Script (Gemini) prompt word count target (currently 80-95 words) |
+| Change TTS voice | Edit Generate Voiceover jsonBody `voiceName` field. Options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
+| Change number of images | Edit Generate Script prompt (currently 8 IMAGE_PROMPTS) |
 | Schedule daily runs | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *`) |
-| Upgrade to AI video | Replace Creatomate nodes with fal.ai Sora/Veo API |
 | Change playlist | Edit Add to Playlist node `playlistId` field |
 | Remove playlist | Delete Add to Playlist node, connect Upload to YouTube → Success Output |
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
+- **v4.0** (2026-02-16): Migrated to completely free stack. Replaced OpenAI (GPT-5, DALL-E 3, TTS) with Gemini 2.0 Flash + 2.5 Flash Image + 2.5 Flash TTS (single Google AI Studio API key). Replaced Creatomate with local FFmpeg Ken Burns effect. 8 images instead of 4. 17 nodes, 16 connections. $0.00/video.
 - **v3.1** (2026-02-09): Added Add to Playlist node — videos are automatically added to a YouTube playlist after upload. 24 nodes, 23 connections.
 - **v3.0** (2026-02-09): Audio upload via tmpfiles.org (Creatomate requires real URLs, not data URIs). Split video data prep into 3 lightweight nodes to avoid OOM. Privacy set to public. 23 nodes, 22 connections.
 - **v2.0** (2026-02-08): Replaced AI Agent with direct HTTP fetches. DALL-E via HTTP Request for URL output. Added render validation. 21 nodes.
