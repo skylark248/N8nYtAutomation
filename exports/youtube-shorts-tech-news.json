@@ -98,26 +98,19 @@
     },
     {
       "parameters": {
-        "resource": "chat",
-        "model": "gpt-5",
-        "prompt": {
-          "messages": [
-            {
-              "role": "system",
-              "content": "You are a tech news researcher and YouTube Shorts scriptwriter. You analyze trending tech news and write punchy, engaging scripts. Always respond with valid JSON only, no markdown code blocks."
-            },
-            {
-              "content": "=First, analyze these trending tech stories and pick the SINGLE best one for a YouTube Short:\n\n{{ $json.rawStory }}\n\nNow write a 45-second YouTube Short script about that story. Respond with ONLY valid JSON:\n{\n  \"SCRIPT\": \"[80-95 word narration. Hook (3s, question or bold claim) → Story (30s, key facts) → Takeaway (12s, why it matters)]\",\n  \"TITLE\": \"[Catchy title under 70 chars]\",\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\n  \"IMAGE_PROMPTS\": [\n    \"[DALL-E prompt 1: vertical 9:16 image, vibrant, tech-themed, no text]\",\n    \"[DALL-E prompt 2: vertical 9:16 image, vibrant, tech-themed, no text]\",\n    \"[DALL-E prompt 3: vertical 9:16 image, vibrant, tech-themed, no text]\",\n    \"[DALL-E prompt 4: vertical 9:16 image, vibrant, tech-themed, no text]\"\n  ]\n}"
-            }
-          ]
-        },
-        "options": {},
-        "requestOptions": {}
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'First, analyze these trending tech stories and pick the SINGLE best one for a YouTube Short:\\n\\n' + $json.rawStory + '\\n\\nNow write a 45-second YouTube Short script about that story. Respond with ONLY valid JSON (no markdown, no code blocks):\\n{\\n  \"SCRIPT\": \"[80-95 word narration. Hook (3s, question or bold claim) → Story (30s, key facts) → Takeaway (12s, why it matters)]\",\\n  \"TITLE\": \"[Catchy title under 70 chars]\",\\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"IMAGE_PROMPTS\": [\\n    \"[Prompt 1: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 2: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 3: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 4: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 5: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 6: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 7: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 8: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\"\\n  ]\\n}' }] }], systemInstruction: { parts: [{ text: 'You are a tech news researcher and YouTube Shorts scriptwriter. You analyze trending tech news and write punchy, engaging scripts. Always respond with valid JSON only, no markdown code blocks.' }] }, generationConfig: { responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "scriptGen",
-      "name": "Generate Script (GPT-5)",
-      "type": "n8n-nodes-base.openAi",
-      "typeVersion": 1,
+      "name": "Generate Script (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         672,
         0
@@ -125,7 +118,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json.content || $input.first().json.message?.content || '';\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from GPT-5 response: ' + response.substring(0, 200));\n  }\n}\n\nif (!parsed.SCRIPT) throw new Error('Missing SCRIPT in response');\nif (!parsed.TITLE) throw new Error('Missing TITLE in response');\nif (!parsed.IMAGE_PROMPTS || !Array.isArray(parsed.IMAGE_PROMPTS)) throw new Error('Missing IMAGE_PROMPTS array');\n\nconst wordCount = parsed.SCRIPT.split(/\\s+/).length;\n\nreturn {\n  json: {\n    script: parsed.SCRIPT,\n    title: parsed.TITLE,\n    description: parsed.DESCRIPTION || '',\n    tags: parsed.TAGS || [],\n    imagePrompts: parsed.IMAGE_PROMPTS,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "// Gemini response format: candidates[0].content.parts[0].text\nconst geminiResponse = $input.first().json;\nlet response = '';\n\ntry {\n  response = geminiResponse.candidates[0].content.parts[0].text;\n} catch (e) {\n  throw new Error('Could not extract text from Gemini response: ' + JSON.stringify(geminiResponse).substring(0, 300));\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from Gemini response: ' + response.substring(0, 200));\n  }\n}\n\nif (!parsed.SCRIPT) throw new Error('Missing SCRIPT in response');\nif (!parsed.TITLE) throw new Error('Missing TITLE in response');\nif (!parsed.IMAGE_PROMPTS || !Array.isArray(parsed.IMAGE_PROMPTS)) throw new Error('Missing IMAGE_PROMPTS array');\nif (parsed.IMAGE_PROMPTS.length < 4) throw new Error('Need at least 4 image prompts, got ' + parsed.IMAGE_PROMPTS.length);\n\nconst wordCount = parsed.SCRIPT.split(/\\s+/).length;\n\nreturn {\n  json: {\n    script: parsed.SCRIPT,\n    title: parsed.TITLE,\n    description: parsed.DESCRIPTION || '',\n    tags: parsed.TAGS || [],\n    imagePrompts: parsed.IMAGE_PROMPTS,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
       },
       "id": "parseScript",
       "name": "Parse Script JSON",
@@ -155,18 +148,25 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.openai.com/v1/images/generations",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=YOUR_GEMINI_API_KEY",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"dall-e-3\",\n  \"prompt\": \"{{ $json.imagePrompts }}\",\n  \"size\": \"1024x1792\",\n  \"n\": 1\n}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.imagePrompts }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }) }}",
         "options": {
           "timeout": 60000
         }
       },
       "id": "generateImages",
-      "name": "Generate Images (DALL-E 3)",
+      "name": "Generate Images (Gemini)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -176,7 +176,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst imageUrls = items.map(item => {\n  const data = item.json.data;\n  if (data && data.length > 0) {\n    return data[0].url;\n  }\n  return '';\n});\n\nreturn {\n  json: {\n    imageUrls: imageUrls\n  }\n};"
+        "jsCode": "const items = $input.all();\nconst imageBase64Array = [];\n\nfor (const item of items) {\n  const candidates = item.json.candidates || [];\n  let found = false;\n  for (const candidate of candidates) {\n    const parts = candidate.content?.parts || [];\n    for (const part of parts) {\n      if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {\n        imageBase64Array.push(part.inlineData.data);\n        found = true;\n        break;\n      }\n    }\n    if (found) break;\n  }\n  if (!found) {\n    throw new Error('No image data found in Gemini response for item: ' + JSON.stringify(item.json).substring(0, 200));\n  }\n}\n\nreturn {\n  json: {\n    imageBase64Array: imageBase64Array,\n    imageCount: imageBase64Array.length\n  }\n};"
       },
       "id": "collectImages",
       "name": "Collect All Images",
@@ -190,24 +190,16 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.openai.com/v1/audio/speech",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=YOUR_GEMINI_API_KEY",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'tts-1', input: $('Parse Script JSON').first().json.script, voice: 'onyx', response_format: 'mp3' }) }}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Read this as an engaging, energetic tech news narrator with clear pronunciation: ' + $('Parse Script JSON').first().json.script }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } } }) }}",
         "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "voiceover"
-            }
-          },
           "timeout": 30000
         }
       },
       "id": "voiceover",
-      "name": "Generate Voiceover (TTS)",
+      "name": "Generate Voiceover (Gemini TTS)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -217,144 +209,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Lightweight: just extract imageUrls and set binary filename (no buffer loading)\nconst imageUrls = $('Collect All Images').first().json.imageUrls || [];\nconst binary = $input.first().binary || {};\n\n// Set proper filename on the voiceover binary metadata\n// This does NOT load the binary data into memory\nif (binary.voiceover) {\n  binary.voiceover.fileName = 'voiceover.mp3';\n  binary.voiceover.mimeType = 'audio/mpeg';\n}\n\nreturn {\n  json: { imageUrls },\n  binary: binary\n};"
+        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\n// Get image data from Collect All Images\nconst images = $('Collect All Images').first().json.imageBase64Array || [];\nif (images.length === 0) throw new Error('No images found from Collect All Images');\n\n// Get audio data from Gemini TTS response\nconst ttsResponse = $input.first().json;\nlet audioBase64 = '';\ntry {\n  audioBase64 = ttsResponse.candidates[0].content.parts[0].inlineData.data;\n} catch (e) {\n  throw new Error('Could not extract audio from Gemini TTS response: ' + JSON.stringify(ttsResponse).substring(0, 300));\n}\n\n// Create temp directory\nconst tmpDir = '/tmp/n8n_video_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  // Write images to temp files\n  const imgPaths = [];\n  for (let i = 0; i < images.length; i++) {\n    const imgPath = path.join(tmpDir, `img_${i}.png`);\n    fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));\n    imgPaths.push(imgPath);\n  }\n\n  // Write audio PCM and convert to WAV (Gemini TTS: 24kHz, 16-bit, mono)\n  const pcmPath = path.join(tmpDir, 'audio.pcm');\n  const wavPath = path.join(tmpDir, 'audio.wav');\n  fs.writeFileSync(pcmPath, Buffer.from(audioBase64, 'base64'));\n  execSync(`ffmpeg -y -f s16le -ar 24000 -ac 1 -i \"${pcmPath}\" \"${wavPath}\"`, { timeout: 30000 });\n\n  // Get audio duration\n  const probeOutput = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 \"${wavPath}\"`).toString().trim();\n  const totalDuration = parseFloat(probeOutput) || 45;\n\n  const numImages = images.length;\n  const fadeDuration = 0.5;\n  // Each image duration: total + overlaps / num images\n  const imgDuration = (totalDuration + (numImages - 1) * fadeDuration) / numImages;\n  const fps = 30;\n  const frames = Math.ceil(imgDuration * fps);\n\n  // Build FFmpeg inputs\n  let inputArgs = '';\n  for (let i = 0; i < numImages; i++) {\n    inputArgs += ` -loop 1 -t ${imgDuration.toFixed(2)} -i \"${imgPaths[i]}\"`;\n  }\n  inputArgs += ` -i \"${wavPath}\"`;\n\n  // Build filter: scale + Ken Burns zoom for each image\n  const filterParts = [];\n  for (let i = 0; i < numImages; i++) {\n    const zoomIn = i % 2 === 0;\n    const zoomExpr = zoomIn ? \"min(zoom+0.0015,1.4)\" : \"if(eq(on,1),1.4,max(zoom-0.0015,1.0))\";\n    filterParts.push(\n      `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +\n      `zoompan=z='${zoomExpr}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +\n      `s=1080x1920:fps=${fps}[v${i}]`\n    );\n  }\n\n  // Build xfade chain\n  const xfadeParts = [];\n  let lastLabel = 'v0';\n  for (let i = 1; i < numImages; i++) {\n    const offset = (imgDuration * i - fadeDuration * i).toFixed(2);\n    const outLabel = i < numImages - 1 ? `t${i}` : 'vout';\n    xfadeParts.push(`[${lastLabel}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset}[${outLabel}]`);\n    lastLabel = outLabel;\n  }\n\n  const fullFilter = filterParts.join('; ') + '; ' + xfadeParts.join('; ');\n  const outputPath = path.join(tmpDir, 'output.mp4');\n\n  const cmd = `ffmpeg${inputArgs} -filter_complex \"${fullFilter}\" -map \"[vout]\" -map ${numImages}:a ` +\n    `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y \"${outputPath}\"`;\n\n  execSync(cmd, { maxBuffer: 200 * 1024 * 1024, timeout: 300000 });\n\n  // Read output video and return as binary\n  const videoBuffer = fs.readFileSync(outputPath);\n\n  return {\n    json: {\n      videoGenerated: true,\n      duration: totalDuration,\n      numImages: numImages\n    },\n    binary: {\n      video: {\n        data: videoBuffer.toString('base64'),\n        mimeType: 'video/mp4',\n        fileName: 'youtube_short.mp4'\n      }\n    }\n  };\n} finally {\n  // Cleanup temp files\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}\n}"
       },
-      "id": "prepareVideoData",
-      "name": "Prepare Video Data",
+      "id": "composeVideo",
+      "name": "Compose Video (FFmpeg)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         1968,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://tmpfiles.org/api/v1/upload",
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "parameterType": "formBinaryData",
-              "name": "file",
-              "inputDataFieldName": "voiceover"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "id": "uploadAudio",
-      "name": "Upload Audio",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2160,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const imageUrls = $('Prepare Video Data').first().json.imageUrls || [];\nconst response = $input.first().json;\n\nlet audioUrl = '';\nif (response.status === 'success' && response.data?.url) {\n  audioUrl = response.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');\n} else {\n  throw new Error('Audio upload to tmpfiles.org failed: ' + JSON.stringify(response).substring(0, 500));\n}\n\nreturn {\n  json: {\n    imageUrls,\n    audioUrl\n  }\n};"
-      },
-      "id": "buildVideoPayload",
-      "name": "Build Video Payload",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2368,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.creatomate.com/v1/renders",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ template_id: 'YOUR_TEMPLATE_ID', modifications: { 'Image-1.source': $json.imageUrls[0], 'Image-2.source': $json.imageUrls[1], 'Image-3.source': $json.imageUrls[2], 'Image-4.source': $json.imageUrls[3], 'Audio.source': $json.audioUrl } }) }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "creatomateRender",
-      "name": "Compose Video (Creatomate)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2560,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "amount": 90
-      },
-      "id": "waitRender",
-      "name": "Wait for Rendering",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        2768,
-        0
-      ],
-      "webhookId": "08df6778-be14-450f-8f32-7ebc0e67ac91"
-    },
-    {
-      "parameters": {
-        "url": "=https://api.creatomate.com/v1/renders/{{ $json.id }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "checkRender",
-      "name": "Check Render Status",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2960,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const render = $json;\n\nif (render.status === 'failed') {\n  throw new Error(`Creatomate render FAILED: ${render.error_message || 'Unknown error'}`);\n}\n\nif (render.status !== 'succeeded') {\n  throw new Error(`Render not complete (status: ${render.status}). Try increasing wait time.`);\n}\n\nreturn { json: { id: render.id, status: render.status, url: render.url } };"
-      },
-      "id": "validateRender",
-      "name": "Validate Render",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3168,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "video"
-            }
-          },
-          "timeout": 60000
-        }
-      },
-      "id": "downloadVideo",
-      "name": "Download Rendered Video",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3360,
         0
       ]
     },
@@ -367,7 +229,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3568,
+        2176,
         0
       ]
     },
@@ -392,7 +254,7 @@
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
       "position": [
-        3760,
+        2384,
         0
       ]
     },
@@ -408,7 +270,7 @@
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
       "position": [
-        3968,
+        2592,
         0
       ]
     },
@@ -421,7 +283,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4176,
+        2800,
         0
       ]
     }
@@ -486,14 +348,14 @@
       "main": [
         [
           {
-            "node": "Generate Script (GPT-5)",
+            "node": "Generate Script (Gemini)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Script (GPT-5)": {
+    "Generate Script (Gemini)": {
       "main": [
         [
           {
@@ -519,14 +381,14 @@
       "main": [
         [
           {
-            "node": "Generate Images (DALL-E 3)",
+            "node": "Generate Images (Gemini)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Images (DALL-E 3)": {
+    "Generate Images (Gemini)": {
       "main": [
         [
           {
@@ -541,102 +403,25 @@
       "main": [
         [
           {
-            "node": "Generate Voiceover (TTS)",
+            "node": "Generate Voiceover (Gemini TTS)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Voiceover (TTS)": {
+    "Generate Voiceover (Gemini TTS)": {
       "main": [
         [
           {
-            "node": "Prepare Video Data",
+            "node": "Compose Video (FFmpeg)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Video Data": {
-      "main": [
-        [
-          {
-            "node": "Upload Audio",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upload Audio": {
-      "main": [
-        [
-          {
-            "node": "Build Video Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Video Payload": {
-      "main": [
-        [
-          {
-            "node": "Compose Video (Creatomate)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Compose Video (Creatomate)": {
-      "main": [
-        [
-          {
-            "node": "Wait for Rendering",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait for Rendering": {
-      "main": [
-        [
-          {
-            "node": "Check Render Status",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Render Status": {
-      "main": [
-        [
-          {
-            "node": "Validate Render",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate Render": {
-      "main": [
-        [
-          {
-            "node": "Download Rendered Video",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Download Rendered Video": {
+    "Compose Video (FFmpeg)": {
       "main": [
         [
           {
