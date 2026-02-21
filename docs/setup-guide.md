@@ -8,23 +8,24 @@
 
 ---
 
-## Step 1: Start n8n with FFmpeg Support
+## Step 1: Start n8n with Docker Compose
 
-The workflow uses FFmpeg to compose video locally. Start n8n with the required environment variables:
+The workflow uses FFmpeg to compose video locally. The parent directory contains a `Dockerfile` and `docker-compose.yml` that build a custom n8n image with FFmpeg baked in.
 
 ```bash
-docker run --rm --name n8n -p 5678:5678 \
-  -e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os \
-  -v $(pwd):/home/node/.n8n \
-  n8nio/n8n
+cd /path/to/n8n   # parent directory containing Dockerfile + docker-compose.yml
+docker compose up -d
 ```
 
-Then install FFmpeg in the running container:
-```bash
-docker exec n8n apk add --no-cache ffmpeg
-```
+This automatically:
+- Builds a custom image with FFmpeg + ffprobe pre-installed
+- Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition)
+- Mounts the current directory as n8n data volume
+- Auto-restarts with Docker Desktop
 
 Open [http://localhost:5678](http://localhost:5678) and create an account when prompted.
+
+> **Note**: The official `n8nio/n8n` image uses a hardened Alpine without `apk`. The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` instead.
 
 ---
 
@@ -211,12 +212,12 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 - Check the URL: `?key=YOUR_ACTUAL_KEY` (no quotes, no spaces)
 
 ### FFmpeg "command not found"
-- Install FFmpeg in the running container: `docker exec n8n apk add --no-cache ffmpeg`
-- This must be done each time you restart the Docker container
+- Rebuild the custom image: `docker compose build && docker compose up -d`
+- The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` and symlinks to `/usr/local/bin/`
 
 ### "Cannot require 'child_process'"
-- The Docker container must be started with: `-e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
-- Restart Docker with the correct command (see Step 1)
+- Ensure you're using `docker compose up -d` (sets `NODE_FUNCTION_ALLOW_BUILTIN` automatically)
+- If running manually: add `-e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` to your Docker command
 
 ### "OAuth token expired" on YouTube
 - Go to the credential in n8n → click "Sign in with Google" again
@@ -306,7 +307,7 @@ On the new instance, you must:
 - [ ] Update the **YouTube OAuth2 redirect URI** to match the new instance URL
   - Docker: `http://localhost:5678/rest/oauth2-credential/callback`
   - Cloud: `https://your-instance.app.n8n.cloud/rest/oauth2-credential/callback`
-- [ ] Ensure FFmpeg is installed (`apk add --no-cache ffmpeg` on Alpine, `apt install ffmpeg` on Debian)
-- [ ] Ensure Docker has `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var
+- [ ] Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then `docker compose up -d` (or manually install FFmpeg and set env var)
+- [ ] Verify FFmpeg works: `docker exec n8n ffmpeg -version`
 - [ ] Test with `privacyStatus: "unlisted"` before going public
 - [ ] Verify all nodes execute successfully end-to-end

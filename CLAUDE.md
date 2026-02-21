@@ -12,6 +12,8 @@
 
 This project lives at `/Users/shivanshchoudhary/Downloads/n8n/YtShortsAutomation/`. The parent `/n8n/` directory contains:
 - `JobSearchAutomation/` -- sibling project (Job Search AI Matching, separate repo)
+- `Dockerfile` -- custom n8n image with FFmpeg baked in (extends `n8nio/n8n:latest`)
+- `docker-compose.yml` -- one-command startup with all env vars and volume mounts
 - n8n runtime data: `database.sqlite`, `binaryData/`, `config`, `.mcp.json`, `crash.journal`
 - The n8n Docker instance mounts the parent `/n8n/` directory as `/home/node/.n8n`
 - Workflow JSON files are imported via the n8n UI, not read from the filesystem at runtime
@@ -20,25 +22,37 @@ This project lives at `/Users/shivanshchoudhary/Downloads/n8n/YtShortsAutomation
 ## Quick Start
 
 ```bash
-# 1. Start n8n with FFmpeg support (from parent /n8n/ directory)
-docker run --rm --name n8n -p 5678:5678 \
-  -e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os \
-  -v $(pwd):/home/node/.n8n \
-  n8nio/n8n
+# 1. Start n8n with Docker Compose (from parent /n8n/ directory)
+# Custom Dockerfile bakes in FFmpeg + ffprobe + NODE_FUNCTION_ALLOW_BUILTIN env var
+docker compose up -d
 
-# 2. Install FFmpeg in the running container
-docker exec n8n apk add --no-cache ffmpeg
+# 2. Get a Google AI Studio API key from https://aistudio.google.com/apikeys
 
-# 3. Get a Google AI Studio API key from https://aistudio.google.com/apikeys
-
-# 4. Import the workflow
+# 3. Import the workflow
 # Open http://localhost:5678 -> Import from file -> select exports/youtube-shorts-tech-news.json
 
-# 5. Replace YOUR_GEMINI_API_KEY in 3 nodes (Script, Images, TTS) with your key
+# 4. Replace YOUR_GEMINI_API_KEY in 3 nodes (Script, Images, TTS) with your key
 
-# 6. Configure YouTube OAuth2 credential (see docs/setup-guide.md)
+# 5. Configure YouTube OAuth2 credential (see docs/setup-guide.md)
 
-# 7. Test run with unlisted privacy
+# 6. Test run with unlisted privacy
+```
+
+## Docker Setup
+
+The parent `/n8n/` directory contains `Dockerfile` and `docker-compose.yml` that build a custom n8n image with FFmpeg baked in.
+
+**Files** (in parent `/n8n/` directory, NOT in this repo):
+- `Dockerfile` -- extends `n8nio/n8n:latest`, installs `ffmpeg-static` + `@ffprobe-installer/ffprobe` via npm, symlinks to `/usr/local/bin/`
+- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, mounts volume, `restart: unless-stopped`
+
+**Why custom image**: The official `n8nio/n8n` uses a hardened Alpine image without `apk` package manager. FFmpeg must be installed via npm global packages (`ffmpeg-static`, `@ffprobe-installer/ffprobe`) and symlinked to PATH.
+
+**Rebuild image** (after n8n version updates):
+```bash
+cd /Users/shivanshchoudhary/Downloads/n8n
+docker compose build
+docker compose up -d
 ```
 
 ## MCP Server Setup
@@ -135,9 +149,10 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 1. **Google AI Studio API Key** - for Gemini script, Gemini image gen, and Gemini TTS (passed in URL query params, no n8n credential needed)
 2. **YouTube OAuth2** - for uploading videos and adding to playlist. Enable YouTube Data API v3 in Google Cloud Console. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
 
-**Required Docker Setup**:
-- `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var (for FFmpeg Code node)
-- `ffmpeg` installed in container (`docker exec n8n apk add --no-cache ffmpeg`)
+**Required Docker Setup** (handled automatically by `docker compose up -d`):
+- Custom Dockerfile with FFmpeg + ffprobe baked in (installed via `npm -g ffmpeg-static @ffprobe-installer/ffprobe`)
+- `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var (set in docker-compose.yml)
+- `restart: unless-stopped` policy (auto-starts with Docker Desktop)
 
 **Monthly Cost**: $0.00 (all free APIs + local FFmpeg)
 
@@ -352,7 +367,7 @@ Key issues encountered and resolved:
 - **n8n OOM crashes**: Caused by `getBinaryDataBuffer()` in Code nodes. Fixed by keeping Code nodes lightweight.
 - **Gemini response format**: Different from OpenAI. Text in `candidates[0].content.parts[0].text`, images/audio in `inlineData.data` (base64).
 - **Gemini TTS audio format**: Returns raw PCM (24kHz, 16-bit, mono). Must convert to WAV via FFmpeg before use.
-- **FFmpeg in n8n**: Requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and `apk add ffmpeg` in container.
+- **FFmpeg in n8n**: Requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and FFmpeg installed. Custom Dockerfile handles this via `npm -g ffmpeg-static`.
 - **YouTube quota**: 10,000 units/day, upload costs 1,600 units = max ~6 uploads/day.
 
 ## PC Upgrade Path (Future)
@@ -367,9 +382,10 @@ When running on a PC with NVIDIA GPU (e.g., RTX 3070 Ti + 32GB RAM):
 7. Requires: ComfyUI running with `--listen 0.0.0.0`, SVD model downloaded (~4GB)
 
 ## Commands
-- Start n8n: `docker run --rm --name n8n -p 5678:5678 -e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os -v $(pwd):/home/node/.n8n n8nio/n8n`
-- Install FFmpeg: `docker exec n8n apk add --no-cache ffmpeg`
-- Stop n8n: `docker stop n8n`
+- Start n8n: `cd /Users/shivanshchoudhary/Downloads/n8n && docker compose up -d`
+- Stop n8n: `cd /Users/shivanshchoudhary/Downloads/n8n && docker compose down`
+- Rebuild image (after Dockerfile changes or n8n updates): `cd /Users/shivanshchoudhary/Downloads/n8n && docker compose build && docker compose up -d`
+- View logs: `docker compose -f /Users/shivanshchoudhary/Downloads/n8n/docker-compose.yml logs -f`
 - Health check: `curl -s http://localhost:5678/healthz`
 - Get workflow via MCP: `n8n_get_workflow` with ID `mlyG42RX4q1yIk8r`
 - Validate workflow: `n8n_validate_workflow` with ID `mlyG42RX4q1yIk8r`

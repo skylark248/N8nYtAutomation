@@ -63,21 +63,23 @@ cp .env.example .env
 
 Open `.env` and fill in your API keys (this file is for your reference — credentials are configured inside n8n, not read from `.env`).
 
-### Step 3: Start n8n with FFmpeg Support
+### Step 3: Start n8n with Docker Compose
+
+The repo includes a `Dockerfile` and `docker-compose.yml` in the parent directory that build a custom n8n image with FFmpeg baked in — no manual installation needed.
 
 ```bash
-docker run --rm --name n8n -p 5678:5678 \
-  -e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os \
-  -v $(pwd):/home/node/.n8n \
-  n8nio/n8n
+docker compose up -d
 ```
 
-Then install FFmpeg in the running container:
-```bash
-docker exec n8n apk add --no-cache ffmpeg
-```
+This single command:
+- Builds a custom image with FFmpeg + ffprobe pre-installed
+- Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition)
+- Mounts the current directory as n8n data volume
+- Auto-restarts with Docker Desktop (`restart: unless-stopped`)
 
 Open [http://localhost:5678](http://localhost:5678) in your browser. Create an account when prompted (this is your local instance, data stays on your machine).
+
+> **Note**: The official `n8nio/n8n` image uses a hardened Alpine without `apk`. The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` instead.
 
 ### Step 4: Import the Workflow
 
@@ -146,6 +148,10 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 ├── CLAUDE.md                              # Claude Code AI assistant config
 ├── n8n-mcp/                               # MCP server for Claude Code (git submodule)
 └── n8n-skills/                            # Claude Code skills (git submodule)
+
+# Parent directory (not in this repo):
+../Dockerfile                              # Custom n8n image with FFmpeg baked in
+../docker-compose.yml                      # One-command startup: docker compose up -d
 ```
 
 ---
@@ -225,8 +231,8 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 | "This app isn't verified" | Click Advanced → "Go to n8n YouTube (unsafe)" — this is your own app, safe to proceed |
 | "Redirect URI mismatch" | Verify URI is exactly `http://localhost:5678/rest/oauth2-credential/callback` |
 | "Quota exceeded" on YouTube | Wait until midnight Pacific Time (6 uploads/day max) |
-| FFmpeg "command not found" | Run `docker exec n8n apk add --no-cache ffmpeg` |
-| "Cannot require 'child_process'" | Restart Docker with `-e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` |
+| FFmpeg "command not found" | Rebuild image: `docker compose build && docker compose up -d` |
+| "Cannot require 'child_process'" | Ensure you're using `docker compose up -d` (sets env var automatically) |
 | n8n-mcp or n8n-skills folders are empty | Run `git submodule init && git submodule update` |
 
 Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
@@ -238,8 +244,8 @@ Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
 1. Import `exports/youtube-shorts-tech-news.json` on the new instance
 2. Replace `YOUR_GEMINI_API_KEY` in 3 nodes with your actual key
 3. Re-configure YouTube OAuth2 credential
-4. Start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var
-5. Install FFmpeg: `apk add --no-cache ffmpeg` (Alpine) or `apt install ffmpeg` (Debian)
+4. Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then run `docker compose up -d`
+5. Or manually: start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and install FFmpeg
 6. Test with `unlisted` before going public
 
 ---
