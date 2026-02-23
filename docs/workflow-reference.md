@@ -3,7 +3,7 @@
 ## Overview
 - **Trigger**: Manual (click to run)
 - **Nodes**: 17 | **Connections**: 16
-- **Estimated Runtime**: 3-5 minutes per video
+- **Estimated Runtime**: 2-4 minutes per video
 - **Monthly Cost**: $0.00 (all free APIs + local FFmpeg)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
 
@@ -270,7 +270,7 @@ Resource: `video`, Operation: `upload`. Binary property: `video`. Privacy: `publ
 - **ID**: `addToPlaylist`
 - **Credential**: YouTube OAuth2 API (same as Upload to YouTube)
 
-Resource: `playlistItem`. `playlistId`: `YOUR_PLAYLIST_ID` — **SETUP REQUIRED**. `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`.
+Resource: `playlistItem`. `playlistId`: `=YOUR_PLAYLIST_ID` — **SETUP REQUIRED** (use expression format `=PLxxxxxxx` to avoid dropdown loading error). `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`.
 
 ### Node 17: Success Output
 - **Type**: `n8n-nodes-base.code` (v2)
@@ -311,7 +311,8 @@ Add to Playlist                   -> Success Output                     | main
 ## Troubleshooting
 
 ### FFmpeg / Video composition issues
-- FFmpeg must be installed in the Docker container: `docker exec n8n apk add --no-cache ffmpeg`
+- FFmpeg is baked into the custom Docker image via `docker compose up -d` (see parent directory Dockerfile)
+- If FFmpeg is missing, rebuild: `docker compose build && docker compose up -d`
 - The Code node requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var
 - Temp files are written to `/tmp/` and cleaned up automatically
 - If n8n crashes with OOM, the video may be too large — check image count and duration

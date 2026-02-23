@@ -96,7 +96,7 @@ claude mcp get n8n-mcp   # Check config
 #### MCP Gotchas (Learned from Building This Workflow)
 
 - **`n8n_update_partial_workflow` updateNode operation**: Use `"updates": {...}` key, NOT `"properties": {...}`. The latter causes "Missing required parameter 'updates'" error.
-- **YouTube node `playlistItem` resource**: Set `resource: "playlistItem"` and pass `playlistId` + `videoId`. The videoId comes from the Upload to YouTube response as `uploadId` or `id`.
+- **YouTube node `playlistItem` resource**: Set `resource: "playlistItem"` and pass `playlistId` + `videoId`. The videoId comes from the Upload to YouTube response as `uploadId` or `id`. Use expression format `=PLxxxxxxx` for playlistId to avoid dropdown loading error ("[object Object]").
 - **Binary data in Code nodes**: Do NOT use `getBinaryDataBuffer()` -- it loads entire binary into memory and causes OOM crashes. Instead, pass binary metadata through and let HTTP Request nodes handle binary natively.
 - **Gemini API key in URL**: Pass as query param `?key=YOUR_KEY` -- no n8n credential setup needed. Simpler than header auth.
 - **Gemini TTS returns raw PCM**: Not MP3/WAV. Must convert with `ffmpeg -f s16le -ar 24000 -ac 1 -i audio.pcm audio.wav` before use.
@@ -138,7 +138,7 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 - **Status**: Inactive (manual trigger)
 - **n8n Workflow ID**: `mlyG42RX4q1yIk8r`
 - **Nodes**: 17 | **Connections**: 16
-- **Estimated Runtime**: 3-5 minutes per video
+- **Estimated Runtime**: 2-4 minutes per video
 - **Export File**: `exports/youtube-shorts-tech-news.json`
 - **Documentation**: See `docs/workflow-reference.md` for full node-by-node breakdown
 - **Setup Guide**: See `docs/setup-guide.md` for credential configuration
@@ -264,16 +264,17 @@ Add to Playlist              -> Success Output                (main)
 
 **Add to Playlist** (YouTube node):
 - Resource: `playlistItem`, Operation: default (add)
-- `playlistId`: `YOUR_PLAYLIST_ID` -- **SETUP REQUIRED**
+- `playlistId`: `=PLgSHSf2lAXvSpfXhIHGxiy3zEg23QjCGc` (expression format avoids dropdown loading error)
 - `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`
 - Uses same YouTube OAuth2 credential as Upload
+- **Note**: The `=` prefix makes it an expression so n8n doesn't try to load playlist options via API (which causes "[object Object]" UI error)
 
 ### Placeholder Values to Configure
 
 | Placeholder | Where | Replace With |
 |---|---|---|
 | `YOUR_GEMINI_API_KEY` | Generate Script, Generate Images, Generate Voiceover nodes (URL query param) | Your Google AI Studio API key |
-| `YOUR_PLAYLIST_ID` | Add to Playlist node, `playlistId` field | Your YouTube playlist ID (starts with `PL...`) |
+| `=YOUR_PLAYLIST_ID` | Add to Playlist node, `playlistId` field | Your YouTube playlist ID prefixed with `=` (e.g., `=PLgSHSf2lAXv...`). The `=` makes it an expression, avoiding dropdown UI error. |
 
 ## Project Structure
 
@@ -287,7 +288,7 @@ Add to Playlist              -> Success Output                (main)
 │
 ├── docs/                     # All documentation
 │   ├── setup-guide.md        # Step-by-step credential setup
-│   └── workflow-reference.md # Complete 24-node workflow documentation
+│   └── workflow-reference.md # Complete 17-node workflow documentation
 │
 ├── exports/                  # Importable workflow JSON files
 │   ├── youtube-shorts-tech-news.json          # Clean export (no credentials)
@@ -344,6 +345,7 @@ Add to Playlist              -> Success Output                (main)
 
 ## Version History
 
+- **v4.1** (2026-02-23): Configured playlist ID (`PLgSHSf2lAXvSpfXhIHGxiy3zEg23QjCGc`). Fixed playlist dropdown UI error by using expression format (`=PLxxx`). Updated runtime estimate to 2-4 minutes. Exported clean JSON with placeholder credentials. Custom Dockerfile + docker-compose.yml for persistent FFmpeg.
 - **v4.0** (2026-02-16): Migrated to completely free stack. Replaced OpenAI GPT-5 -> Gemini 2.0 Flash, DALL-E 3 -> Gemini 2.5 Flash Image, OpenAI TTS -> Gemini 2.5 Flash TTS, Creatomate -> FFmpeg Ken Burns. Increased to 8 images for ~45s video. Removed 8 nodes (Creatomate pipeline), added 1 (FFmpeg compose). 17 nodes, 16 connections. $0/month.
 - **v3.1** (2026-02-09): Added Add to Playlist node -- videos automatically added to YouTube playlist after upload. 24 nodes, 23 connections.
 - **v3.0** (2026-02-09): Audio upload via tmpfiles.org (Creatomate requires real URLs, not data URIs). Split video data prep into 3 lightweight nodes to avoid OOM. Privacy set to public. 23 nodes, 22 connections.
