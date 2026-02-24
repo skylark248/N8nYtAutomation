@@ -7,10 +7,7 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [
-        -608,
-        0
-      ]
+      "position": [-608, 0]
     },
     {
       "parameters": {
@@ -36,10 +33,7 @@
       "name": "Fetch Reddit Posts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        -400,
-        0
-      ]
+      "position": [-400, 0]
     },
     {
       "parameters": {
@@ -49,10 +43,7 @@
       "name": "Format Reddit Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -208,
-        0
-      ]
+      "position": [-208, 0]
     },
     {
       "parameters": {
@@ -65,10 +56,7 @@
       "name": "Fetch HN Posts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        0,
-        0
-      ]
+      "position": [0, 0]
     },
     {
       "parameters": {
@@ -78,10 +66,7 @@
       "name": "Pick Best Story",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        224,
-        0
-      ]
+      "position": [224, 0]
     },
     {
       "parameters": {
@@ -91,101 +76,44 @@
       "name": "Prepare Story Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        448,
-        0
-      ]
+      "position": [448, 0]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'First, analyze these trending tech stories and pick the SINGLE best one for a YouTube Short:\\n\\n' + $json.rawStory + '\\n\\nNow write a 45-second YouTube Short script about that story. Respond with ONLY valid JSON (no markdown, no code blocks):\\n{\\n  \"SCRIPT\": \"[80-95 word narration. Hook (3s, question or bold claim) → Story (30s, key facts) → Takeaway (12s, why it matters)]\",\\n  \"TITLE\": \"[Catchy title under 70 chars]\",\\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"IMAGE_PROMPTS\": [\\n    \"[Prompt 1: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 2: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 3: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 4: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 5: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 6: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 7: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 8: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\"\\n  ]\\n}' }] }], systemInstruction: { parts: [{ text: 'You are a tech news researcher and YouTube Shorts scriptwriter. You analyze trending tech news and write punchy, engaging scripts. Always respond with valid JSON only, no markdown code blocks.' }] }, generationConfig: { responseMimeType: 'application/json' } }) }}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'First, analyze these trending tech stories and pick the SINGLE best one for a YouTube Short:\\n\\n' + $json.rawStory + '\\n\\nNow write a 45-second YouTube Short script about that story. Respond with ONLY valid JSON (no markdown, no code blocks):\\n{\\n  \"SCRIPT\": \"[80-95 word narration. Hook (3s, question or bold claim) then Story (30s, key facts) then Takeaway (12s, why it matters)]\",\\n  \"TITLE\": \"[Catchy title under 70 chars]\",\\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"IMAGE_PROMPTS\": [\\n    \"[Prompt 1: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 2: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 3: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 4: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 5: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 6: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 7: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 8: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\"\\n  ]\\n}' }] }], systemInstruction: { parts: [{ text: 'You are a tech news researcher and YouTube Shorts scriptwriter. You analyze trending tech news and write punchy, engaging scripts. Always respond with valid JSON only, no markdown code blocks.' }] }, generationConfig: { responseMimeType: 'application/json' } }) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 60000
         }
       },
       "id": "scriptGen",
       "name": "Generate Script (Gemini)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        672,
-        0
-      ]
+      "position": [672, 0]
     },
     {
       "parameters": {
-        "jsCode": "// Gemini response format: candidates[0].content.parts[0].text\nconst geminiResponse = $input.first().json;\nlet response = '';\n\ntry {\n  response = geminiResponse.candidates[0].content.parts[0].text;\n} catch (e) {\n  throw new Error('Could not extract text from Gemini response: ' + JSON.stringify(geminiResponse).substring(0, 300));\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from Gemini response: ' + response.substring(0, 200));\n  }\n}\n\nif (!parsed.SCRIPT) throw new Error('Missing SCRIPT in response');\nif (!parsed.TITLE) throw new Error('Missing TITLE in response');\nif (!parsed.IMAGE_PROMPTS || !Array.isArray(parsed.IMAGE_PROMPTS)) throw new Error('Missing IMAGE_PROMPTS array');\nif (parsed.IMAGE_PROMPTS.length < 4) throw new Error('Need at least 4 image prompts, got ' + parsed.IMAGE_PROMPTS.length);\n\nconst wordCount = parsed.SCRIPT.split(/\\s+/).length;\n\nreturn {\n  json: {\n    script: parsed.SCRIPT,\n    title: parsed.TITLE,\n    description: parsed.DESCRIPTION || '',\n    tags: parsed.TAGS || [],\n    imagePrompts: parsed.IMAGE_PROMPTS,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "// Gemini response format: candidates[0].content.parts[0].text\nconst geminiResponse = $input.first().json;\nlet response = '';\n\ntry {\n  response = geminiResponse.candidates[0].content.parts[0].text;\n} catch (e) {\n  throw new Error('Could not extract text from Gemini response: ' + JSON.stringify(geminiResponse).substring(0, 300));\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from Gemini response: ' + response.substring(0, 200));\n  }\n}\n\n// Find the object containing SCRIPT — Gemini uses variable nesting:\n// Flat: {SCRIPT, TITLE, ...}\n// Wrapped: {YOUTUBE_SHORT: {SCRIPT, ...}}\n// Nested: {story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}\nfunction findScriptData(obj) {\n  if (!obj || typeof obj !== 'object') return null;\n  if (obj.SCRIPT || obj.script) return obj;\n  for (const key of Object.keys(obj)) {\n    const val = obj[key];\n    if (val && typeof val === 'object' && !Array.isArray(val)) {\n      if (val.SCRIPT || val.script) return val;\n      for (const k2 of Object.keys(val)) {\n        const v2 = val[k2];\n        if (v2 && typeof v2 === 'object' && !Array.isArray(v2)) {\n          if (v2.SCRIPT || v2.script) return v2;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nconst data = findScriptData(parsed);\nif (!data) throw new Error('Could not find SCRIPT in response. Keys: ' + JSON.stringify(Object.keys(parsed)) + '. Full: ' + JSON.stringify(parsed).substring(0, 500));\n\nconst script = data.SCRIPT || data.script;\nconst title = data.TITLE || data.title;\nconst description = data.DESCRIPTION || data.description || '';\nconst tags = data.TAGS || data.tags || [];\nconst imagePrompts = data.IMAGE_PROMPTS || data.image_prompts || data.imagePrompts || [];\n\nif (!script) throw new Error('SCRIPT field is empty');\nif (!title) throw new Error('TITLE field is empty');\nif (!Array.isArray(imagePrompts) || imagePrompts.length < 4) {\n  throw new Error('Need at least 4 image prompts, got ' + (Array.isArray(imagePrompts) ? imagePrompts.length : 'non-array'));\n}\n\nconst wordCount = script.split(/\\s+/).length;\n\nreturn {\n  json: {\n    script: script,\n    title: title,\n    description: description,\n    tags: Array.isArray(tags) ? tags : [],\n    imagePrompts: imagePrompts,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
       },
       "id": "parseScript",
       "name": "Parse Script JSON",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        880,
-        0
-      ]
+      "position": [880, 0]
     },
     {
       "parameters": {
-        "fieldToSplitOut": "imagePrompts",
-        "include": "selectedOtherFields",
-        "fieldsToInclude": "script,title,description,tags",
-        "options": {}
-      },
-      "id": "splitImages",
-      "name": "Split Image Prompts",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [
-        1104,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=YOUR_GEMINI_API_KEY",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.imagePrompts }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }) }}",
-        "options": {
-          "timeout": 60000
-        }
+        "jsCode": "// Generate images with 3 fallback providers (all free, no API key)\n// 1. Pollinations.ai  2. HuggingFace FLUX.1  3. FFmpeg gradient (always works)\nconst { exec, execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst scriptData = $input.first().json;\nconst prompts = scriptData.imagePrompts || [];\nif (prompts.length === 0) throw new Error('No image prompts found');\n\nconst tmpDir = '/tmp/n8n_images_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  fs.writeFileSync(path.join(tmpDir, 'prompts.json'), JSON.stringify(prompts));\n\n  const script = [\n    \"const https = require('https');\",\n    \"const http = require('http');\",\n    \"const { execSync } = require('child_process');\",\n    \"const fs = require('fs');\",\n    \"const path = require('path');\",\n    \"const tmpDir = process.argv[2];\",\n    \"const prompts = JSON.parse(fs.readFileSync(path.join(tmpDir, 'prompts.json'), 'utf8'));\",\n    \"const sleep = ms => new Promise(r => setTimeout(r, ms));\",\n    \"\",\n    \"function httpReq(url, opts) {\",\n    \"  return new Promise((resolve, reject) => {\",\n    \"    const u = new URL(url);\",\n    \"    const mod = u.protocol === 'http:' ? http : https;\",\n    \"    const method = (opts&&opts.method)||'GET';\",\n    \"    const headers = (opts&&opts.headers)||{};\",\n    \"    const body = opts&&opts.body;\",\n    \"    const maxR = (opts&&opts.maxR!==undefined)?opts.maxR:10;\",\n    \"    const tout = (opts&&opts.timeout)||120000;\",\n    \"    const r = mod.request({hostname:u.hostname,port:u.port,path:u.pathname+u.search,method,headers:{'User-Agent':'Mozilla/5.0',...headers}}, res => {\",\n    \"      if (res.statusCode>=300 && res.statusCode<400 && res.headers.location) {\",\n    \"        if (maxR<=0){reject(new Error('Too many redirects'));return;}\",\n    \"        const loc = res.headers.location.startsWith('http')?res.headers.location:u.protocol+'//'+u.hostname+res.headers.location;\",\n    \"        httpReq(loc,{...opts,maxR:maxR-1}).then(resolve).catch(reject);return;\",\n    \"      }\",\n    \"      const chunks=[];\",\n    \"      res.on('data',c=>chunks.push(c));\",\n    \"      res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));\",\n    \"    });\",\n    \"    r.on('error',reject);\",\n    \"    r.setTimeout(tout,()=>{r.destroy();reject(new Error('Timeout'));});\",\n    \"    if(body)r.write(body);\",\n    \"    r.end();\",\n    \"  });\",\n    \"}\",\n    \"\",\n    \"// Provider 1: Pollinations.ai\",\n    \"async function tryPollinations(prompt) {\",\n    \"  const url='https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt)+'?width=768&height=1344&nologo=true&seed='+(Date.now());\",\n    \"  const res=await httpReq(url,{timeout:120000});\",\n    \"  if(res.status!==200) throw new Error('Poll HTTP '+res.status);\",\n    \"  const ct=(res.headers['content-type']||'').toLowerCase();\",\n    \"  if(!ct.includes('image')||res.body.length<5000) throw new Error('Poll: not image (ct='+ct+',sz='+res.body.length+')');\",\n    \"  return res.body;\",\n    \"}\",\n    \"\",\n    \"// Provider 2: HuggingFace FLUX.1-merged (known working params)\",\n    \"async function tryHuggingFace(prompt) {\",\n    \"  const HF='multimodalart-flux-1-merged.hf.space';\",\n    \"  const payload=JSON.stringify({data:[prompt,0,true,768,1344,3.5,4]});\",\n    \"  const sub=await httpReq('https://'+HF+'/gradio_api/call/infer',{\",\n    \"    method:'POST',headers:{'Content-Type':'application/json','Content-Length':''+Buffer.byteLength(payload)},body:payload,timeout:30000\",\n    \"  });\",\n    \"  if(sub.status!==200) throw new Error('HF submit '+sub.status);\",\n    \"  const j=JSON.parse(sub.body.toString());\",\n    \"  if(!j.event_id) throw new Error('HF no event_id');\",\n    \"  const sseRes=await httpReq('https://'+HF+'/gradio_api/call/infer/'+j.event_id,{timeout:120000});\",\n    \"  const sse=sseRes.body.toString();\",\n    \"  if(sse.includes('event: error')||sse.includes('event:error')) throw new Error('HF Space error');\",\n    \"  const lines=sse.split('\\\\n');\",\n    \"  let ds=null;\",\n    \"  for(let i=0;i<lines.length;i++){\",\n    \"    if(lines[i].includes('complete')){\",\n    \"      for(let k=i+1;k<lines.length;k++){if(lines[k].startsWith('data:')){ds=lines[k].substring(5).trim();break;}}\",\n    \"      break;\",\n    \"    }\",\n    \"  }\",\n    \"  if(!ds) throw new Error('HF no complete');\",\n    \"  const p=JSON.parse(ds);\",\n    \"  const imgUrl=p[0]&&p[0].url;\",\n    \"  if(!imgUrl) throw new Error('HF no URL');\",\n    \"  const imgRes=await httpReq(imgUrl,{timeout:60000});\",\n    \"  if(imgRes.status!==200||imgRes.body.length<5000) throw new Error('HF bad download');\",\n    \"  return imgRes.body;\",\n    \"}\",\n    \"\",\n    \"// Provider 3: FFmpeg gradient (always works, local)\",\n    \"function generateGradient(idx) {\",\n    \"  const colors=['#1a1a2e','#16213e','#0f3460','#533483','#2b2d42','#264653','#2a9d8f','#e76f51'];\",\n    \"  const c=colors[idx%colors.length];\",\n    \"  const out=path.join(tmpDir,'grad_'+idx+'.png');\",\n    \"  execSync('ffmpeg -y -f lavfi -i \\\"color=c='+c+':s=768x1344:d=1\\\" -frames:v 1 \\\"'+out+'\\\"',{timeout:10000});\",\n    \"  return fs.readFileSync(out);\",\n    \"}\",\n    \"\",\n    \"const providers = [\",\n    \"  {name:'Pollinations', fn:tryPollinations, retries:2, retryDelay:10000, betweenDelay:3000},\",\n    \"  {name:'HuggingFace', fn:tryHuggingFace, retries:2, retryDelay:15000, betweenDelay:20000},\",\n    \"];\",\n    \"\",\n    \"async function genImage(prompt, idx) {\",\n    \"  for (const prov of providers) {\",\n    \"    for (let a=0; a<prov.retries; a++) {\",\n    \"      try {\",\n    \"        if(a>0){process.stderr.write('    '+prov.name+' retry '+a+'\\\\n');await sleep(prov.retryDelay);}\",\n    \"        const img=await prov.fn(prompt);\",\n    \"        process.stderr.write('  #'+(idx+1)+' OK via '+prov.name+' ('+img.length+' bytes)\\\\n');\",\n    \"        return {base64:img.toString('base64'),provider:prov.name};\",\n    \"      } catch(e) {\",\n    \"        process.stderr.write('    '+prov.name+'['+a+']: '+e.message.substring(0,120)+'\\\\n');\",\n    \"      }\",\n    \"    }\",\n    \"  }\",\n    \"  process.stderr.write('  #'+(idx+1)+' using gradient fallback\\\\n');\",\n    \"  const img=generateGradient(idx);\",\n    \"  return {base64:img.toString('base64'),provider:'gradient'};\",\n    \"}\",\n    \"\",\n    \"async function main() {\",\n    \"  const res=[];\",\n    \"  let lastProvider=null;\",\n    \"  for(let i=0;i<prompts.length;i++) {\",\n    \"    if(i>0 && lastProvider) {\",\n    \"      const prov=providers.find(p=>p.name===lastProvider);\",\n    \"      const delay=prov?prov.betweenDelay:3000;\",\n    \"      await sleep(delay);\",\n    \"    }\",\n    \"    process.stderr.write('Image '+(i+1)+'/'+prompts.length+'\\\\n');\",\n    \"    const result=await genImage(prompts[i],i);\",\n    \"    lastProvider=result.provider;\",\n    \"    res.push(result.base64);\",\n    \"  }\",\n    \"  process.stdout.write(JSON.stringify(res));\",\n    \"}\",\n    \"main().catch(e=>{process.stderr.write('FATAL: '+e.message.substring(0,500)+'\\\\n');process.exit(1);});\"\n  ];\n\n  fs.writeFileSync(path.join(tmpDir, 'generate.js'), script.join('\\n'));\n\n  const output = await new Promise((resolve, reject) => {\n    exec(\n      `node \"${path.join(tmpDir, 'generate.js')}\" \"${tmpDir}\"`,\n      { timeout: 900000, maxBuffer: 100 * 1024 * 1024 },\n      (error, stdout, stderr) => {\n        if (error) {\n          const fm = (stderr||'').match(/FATAL: ([\\s\\S]+)/);\n          const tail = (stderr||'').split('\\n').filter(l=>l.trim()).slice(-5).join(' | ');\n          reject(new Error(fm ? fm[1].trim() : tail || error.message));\n        } else {\n          resolve(stdout);\n        }\n      }\n    );\n  });\n\n  const imageBase64Array = JSON.parse(output);\n\n  return {\n    json: {\n      imageBase64Array,\n      imageCount: imageBase64Array.length,\n      script: scriptData.script,\n      title: scriptData.title,\n      description: scriptData.description,\n      tags: scriptData.tags\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(e) {}\n}"
       },
       "id": "generateImages",
-      "name": "Generate Images (Gemini)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1328,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst imageBase64Array = [];\n\nfor (const item of items) {\n  const candidates = item.json.candidates || [];\n  let found = false;\n  for (const candidate of candidates) {\n    const parts = candidate.content?.parts || [];\n    for (const part of parts) {\n      if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {\n        imageBase64Array.push(part.inlineData.data);\n        found = true;\n        break;\n      }\n    }\n    if (found) break;\n  }\n  if (!found) {\n    throw new Error('No image data found in Gemini response for item: ' + JSON.stringify(item.json).substring(0, 200));\n  }\n}\n\nreturn {\n  json: {\n    imageBase64Array: imageBase64Array,\n    imageCount: imageBase64Array.length\n  }\n};"
-      },
-      "id": "collectImages",
-      "name": "Collect All Images",
+      "name": "Generate Images (FLUX)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1552,
-        0
-      ]
+      "position": [1200, 0]
     },
     {
       "parameters": {
@@ -202,23 +130,17 @@
       "name": "Generate Voiceover (Gemini TTS)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        1760,
-        0
-      ]
+      "position": [1500, 0]
     },
     {
       "parameters": {
-        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\n// Get image data from Collect All Images\nconst images = $('Collect All Images').first().json.imageBase64Array || [];\nif (images.length === 0) throw new Error('No images found from Collect All Images');\n\n// Get audio data from Gemini TTS response\nconst ttsResponse = $input.first().json;\nlet audioBase64 = '';\ntry {\n  audioBase64 = ttsResponse.candidates[0].content.parts[0].inlineData.data;\n} catch (e) {\n  throw new Error('Could not extract audio from Gemini TTS response: ' + JSON.stringify(ttsResponse).substring(0, 300));\n}\n\n// Create temp directory\nconst tmpDir = '/tmp/n8n_video_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  // Write images to temp files\n  const imgPaths = [];\n  for (let i = 0; i < images.length; i++) {\n    const imgPath = path.join(tmpDir, `img_${i}.png`);\n    fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));\n    imgPaths.push(imgPath);\n  }\n\n  // Write audio PCM and convert to WAV (Gemini TTS: 24kHz, 16-bit, mono)\n  const pcmPath = path.join(tmpDir, 'audio.pcm');\n  const wavPath = path.join(tmpDir, 'audio.wav');\n  fs.writeFileSync(pcmPath, Buffer.from(audioBase64, 'base64'));\n  execSync(`ffmpeg -y -f s16le -ar 24000 -ac 1 -i \"${pcmPath}\" \"${wavPath}\"`, { timeout: 30000 });\n\n  // Get audio duration\n  const probeOutput = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 \"${wavPath}\"`).toString().trim();\n  const totalDuration = parseFloat(probeOutput) || 45;\n\n  const numImages = images.length;\n  const fadeDuration = 0.5;\n  const imgDuration = (totalDuration + (numImages - 1) * fadeDuration) / numImages;\n  const fps = 30;\n  const frames = Math.ceil(imgDuration * fps);\n\n  // Build FFmpeg inputs\n  let inputArgs = '';\n  for (let i = 0; i < numImages; i++) {\n    inputArgs += ` -loop 1 -t ${imgDuration.toFixed(2)} -i \"${imgPaths[i]}\"`;\n  }\n  inputArgs += ` -i \"${wavPath}\"`;\n\n  // Build filter: scale + Ken Burns zoom for each image\n  const filterParts = [];\n  for (let i = 0; i < numImages; i++) {\n    const zoomIn = i % 2 === 0;\n    const zoomExpr = zoomIn ? \"min(zoom+0.0015,1.4)\" : \"if(eq(on,1),1.4,max(zoom-0.0015,1.0))\";\n    filterParts.push(\n      `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +\n      `zoompan=z='${zoomExpr}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +\n      `s=1080x1920:fps=${fps}[v${i}]`\n    );\n  }\n\n  // Build xfade chain\n  const xfadeParts = [];\n  let lastLabel = 'v0';\n  for (let i = 1; i < numImages; i++) {\n    const offset = (imgDuration * i - fadeDuration * i).toFixed(2);\n    const outLabel = i < numImages - 1 ? `t${i}` : 'vout';\n    xfadeParts.push(`[${lastLabel}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset}[${outLabel}]`);\n    lastLabel = outLabel;\n  }\n\n  const fullFilter = filterParts.join('; ') + '; ' + xfadeParts.join('; ');\n  const outputPath = path.join(tmpDir, 'output.mp4');\n\n  const cmd = `ffmpeg${inputArgs} -filter_complex \"${fullFilter}\" -map \"[vout]\" -map ${numImages}:a ` +\n    `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y \"${outputPath}\"`;\n\n  execSync(cmd, { maxBuffer: 200 * 1024 * 1024, timeout: 300000 });\n\n  // Read output video and return as binary\n  const videoBuffer = fs.readFileSync(outputPath);\n\n  return {\n    json: {\n      videoGenerated: true,\n      duration: totalDuration,\n      numImages: numImages\n    },\n    binary: {\n      video: {\n        data: videoBuffer.toString('base64'),\n        mimeType: 'video/mp4',\n        fileName: 'youtube_short.mp4'\n      }\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}\n}"
+        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\n// Get image data from Generate Images (FLUX)\nconst imageData = $('Generate Images (FLUX)').first().json;\nconst images = imageData.imageBase64Array || [];\nif (images.length === 0) throw new Error('No images found from Generate Images');\n\n// Get audio data from Gemini TTS response\nconst ttsResponse = $input.first().json;\nlet audioBase64 = '';\ntry {\n  audioBase64 = ttsResponse.candidates[0].content.parts[0].inlineData.data;\n} catch (e) {\n  throw new Error('Could not extract audio from Gemini TTS response: ' + JSON.stringify(ttsResponse).substring(0, 300));\n}\n\n// Create temp directory\nconst tmpDir = '/tmp/n8n_video_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  // Write images to temp files\n  const imgPaths = [];\n  for (let i = 0; i < images.length; i++) {\n    const imgPath = path.join(tmpDir, `img_${i}.png`);\n    fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));\n    imgPaths.push(imgPath);\n  }\n\n  // Write audio PCM and convert to WAV (Gemini TTS: 24kHz, 16-bit, mono)\n  const pcmPath = path.join(tmpDir, 'audio.pcm');\n  const wavPath = path.join(tmpDir, 'audio.wav');\n  fs.writeFileSync(pcmPath, Buffer.from(audioBase64, 'base64'));\n  execSync(`ffmpeg -y -f s16le -ar 24000 -ac 1 -i \"${pcmPath}\" \"${wavPath}\"`, { timeout: 30000 });\n\n  // Get audio duration\n  const probeOutput = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 \"${wavPath}\"`).toString().trim();\n  const totalDuration = parseFloat(probeOutput) || 45;\n\n  const numImages = images.length;\n  const fadeDuration = 0.5;\n  const imgDuration = (totalDuration + (numImages - 1) * fadeDuration) / numImages;\n  const fps = 30;\n  const frames = Math.ceil(imgDuration * fps);\n\n  // Build FFmpeg inputs\n  let inputArgs = '';\n  for (let i = 0; i < numImages; i++) {\n    inputArgs += ` -loop 1 -t ${imgDuration.toFixed(2)} -i \"${imgPaths[i]}\"`;\n  }\n  inputArgs += ` -i \"${wavPath}\"`;\n\n  // Build filter: scale + Ken Burns zoom for each image\n  const filterParts = [];\n  for (let i = 0; i < numImages; i++) {\n    const zoomIn = i % 2 === 0;\n    const zoomExpr = zoomIn ? \"min(zoom+0.0015,1.4)\" : \"if(eq(on,1),1.4,max(zoom-0.0015,1.0))\";\n    filterParts.push(\n      `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +\n      `zoompan=z='${zoomExpr}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +\n      `s=1080x1920:fps=${fps}[v${i}]`\n    );\n  }\n\n  // Build xfade chain\n  const xfadeParts = [];\n  let lastLabel = 'v0';\n  for (let i = 1; i < numImages; i++) {\n    const offset = (imgDuration * i - fadeDuration * i).toFixed(2);\n    const outLabel = i < numImages - 1 ? `t${i}` : 'vout';\n    xfadeParts.push(`[${lastLabel}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset}[${outLabel}]`);\n    lastLabel = outLabel;\n  }\n\n  const fullFilter = filterParts.join('; ') + '; ' + xfadeParts.join('; ');\n  const outputPath = path.join(tmpDir, 'output.mp4');\n\n  const cmd = `ffmpeg${inputArgs} -filter_complex \"${fullFilter}\" -map \"[vout]\" -map ${numImages}:a ` +\n    `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y \"${outputPath}\"`;\n\n  execSync(cmd, { maxBuffer: 200 * 1024 * 1024, timeout: 300000 });\n\n  // Read output video and return as binary\n  const videoBuffer = fs.readFileSync(outputPath);\n\n  return {\n    json: {\n      videoGenerated: true,\n      duration: totalDuration,\n      numImages: numImages\n    },\n    binary: {\n      video: {\n        data: videoBuffer.toString('base64'),\n        mimeType: 'video/mp4',\n        fileName: 'youtube_short.mp4'\n      }\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}\n}"
       },
       "id": "composeVideo",
       "name": "Compose Video (FFmpeg)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1968,
-        0
-      ]
+      "position": [1800, 0]
     },
     {
       "parameters": {
@@ -228,10 +150,7 @@
       "name": "Prepare YouTube Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        2176,
-        0
-      ]
+      "position": [2100, 0]
     },
     {
       "parameters": {
@@ -253,10 +172,7 @@
       "name": "Upload to YouTube",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [
-        2384,
-        0
-      ]
+      "position": [2384, 0]
     },
     {
       "parameters": {
@@ -268,10 +184,7 @@
       "name": "Add to Playlist",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [
-        2592,
-        0
-      ]
+      "position": [2592, 0]
     },
     {
       "parameters": {
@@ -281,195 +194,54 @@
       "name": "Success Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        2800,
-        0
-      ]
+      "position": [2800, 0]
     }
   ],
   "connections": {
     "Manual Trigger": {
-      "main": [
-        [
-          {
-            "node": "Fetch Reddit Posts",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Fetch Reddit Posts", "type": "main", "index": 0 }]]
     },
     "Fetch Reddit Posts": {
-      "main": [
-        [
-          {
-            "node": "Format Reddit Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Format Reddit Data", "type": "main", "index": 0 }]]
     },
     "Format Reddit Data": {
-      "main": [
-        [
-          {
-            "node": "Fetch HN Posts",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Fetch HN Posts", "type": "main", "index": 0 }]]
     },
     "Fetch HN Posts": {
-      "main": [
-        [
-          {
-            "node": "Pick Best Story",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Pick Best Story", "type": "main", "index": 0 }]]
     },
     "Pick Best Story": {
-      "main": [
-        [
-          {
-            "node": "Prepare Story Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Prepare Story Data", "type": "main", "index": 0 }]]
     },
     "Prepare Story Data": {
-      "main": [
-        [
-          {
-            "node": "Generate Script (Gemini)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Generate Script (Gemini)", "type": "main", "index": 0 }]]
     },
     "Generate Script (Gemini)": {
-      "main": [
-        [
-          {
-            "node": "Parse Script JSON",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Parse Script JSON", "type": "main", "index": 0 }]]
     },
     "Parse Script JSON": {
-      "main": [
-        [
-          {
-            "node": "Split Image Prompts",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Generate Images (FLUX)", "type": "main", "index": 0 }]]
     },
-    "Split Image Prompts": {
-      "main": [
-        [
-          {
-            "node": "Generate Images (Gemini)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Generate Images (Gemini)": {
-      "main": [
-        [
-          {
-            "node": "Collect All Images",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Collect All Images": {
-      "main": [
-        [
-          {
-            "node": "Generate Voiceover (Gemini TTS)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Generate Images (FLUX)": {
+      "main": [[{ "node": "Generate Voiceover (Gemini TTS)", "type": "main", "index": 0 }]]
     },
     "Generate Voiceover (Gemini TTS)": {
-      "main": [
-        [
-          {
-            "node": "Compose Video (FFmpeg)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Compose Video (FFmpeg)", "type": "main", "index": 0 }]]
     },
     "Compose Video (FFmpeg)": {
-      "main": [
-        [
-          {
-            "node": "Prepare YouTube Metadata",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Prepare YouTube Metadata", "type": "main", "index": 0 }]]
     },
     "Prepare YouTube Metadata": {
-      "main": [
-        [
-          {
-            "node": "Upload to YouTube",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Upload to YouTube", "type": "main", "index": 0 }]]
     },
     "Upload to YouTube": {
-      "main": [
-        [
-          {
-            "node": "Add to Playlist",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Add to Playlist", "type": "main", "index": 0 }]]
     },
     "Add to Playlist": {
-      "main": [
-        [
-          {
-            "node": "Success Output",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Success Output", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "pinData": {},
-  "meta": {
-    "templateCredsSetupCompleted": true
   }
 }

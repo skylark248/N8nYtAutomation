@@ -2,7 +2,7 @@
 
 Automated pipeline that creates and publishes YouTube Shorts about trending tech/AI news — fully hands-free, completely free.
 
-**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 2.0 Flash) → Create images (Gemini 2.5 Flash Image) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg Ken Burns) → Upload to YouTube → Add to playlist
+**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 2.5 Flash) → Create images (Pollinations.ai / HuggingFace FLUX.1) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg Ken Burns) → Upload to YouTube → Add to playlist
 
 **Cost:** $0.00 per video (all free APIs + local FFmpeg)
 
@@ -15,9 +15,9 @@ Manual Trigger
     ↓
 Fetch trending tech news from Reddit + Hacker News (direct HTTP)
     ↓
-Gemini 2.0 Flash picks best story + writes 45-second script + 8 image prompts
+Gemini 2.5 Flash picks best story + writes 45-second script + 8 image prompts
     ↓
-Gemini 2.5 Flash Image generates 8 vertical images (9:16, base64)
+Pollinations.ai / HuggingFace FLUX.1 generates 8 vertical images (768×1344)
     ↓
 Gemini 2.5 Flash TTS creates voiceover narration (PCM audio)
     ↓
@@ -86,14 +86,13 @@ Open [http://localhost:5678](http://localhost:5678) in your browser. Create an a
 1. In n8n, click **"Add workflow"** (or the import icon)
 2. Click **"Import from file"**
 3. Select `exports/youtube-shorts-tech-news.json` from the cloned repo
-4. The full 17-node workflow appears ready to configure
+4. The full 15-node workflow appears ready to configure
 
 ### Step 5: Add Your Gemini API Key
 
 1. Get your API key from [Google AI Studio](https://aistudio.google.com/apikeys) (free)
-2. In n8n, open these 3 nodes and replace `YOUR_GEMINI_API_KEY` in the URL:
+2. In n8n, open these 2 nodes and replace `YOUR_GEMINI_API_KEY` in the URL:
    - **"Generate Script (Gemini)"**
-   - **"Generate Images (Gemini)"**
    - **"Generate Voiceover (Gemini TTS)"**
 
 No n8n credential setup needed — the API key is passed directly in the URL query parameter.
@@ -160,8 +159,8 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 
 | Service | Per Video | Monthly (30 videos) |
 |---|---|---|
-| Gemini 2.0 Flash (script) | $0.00 | $0.00 (free tier) |
-| Gemini 2.5 Flash Image (8 images) | $0.00 | $0.00 (free tier) |
+| Gemini 2.5 Flash (script) | $0.00 | $0.00 (free tier) |
+| Pollinations.ai / FLUX.1 (8 images) | $0.00 | $0.00 (free, no API key) |
 | Gemini 2.5 Flash TTS (voiceover) | $0.00 | $0.00 (free tier) |
 | FFmpeg (video render) | $0.00 | $0.00 (local) |
 | YouTube API | $0.00 | $0.00 |
@@ -242,7 +241,7 @@ Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
 ## Migrating to Another n8n Instance
 
 1. Import `exports/youtube-shorts-tech-news.json` on the new instance
-2. Replace `YOUR_GEMINI_API_KEY` in 3 nodes with your actual key
+2. Replace `YOUR_GEMINI_API_KEY` in 2 nodes with your actual key
 3. Re-configure YouTube OAuth2 credential
 4. Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then run `docker compose up -d`
 5. Or manually: start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and install FFmpeg

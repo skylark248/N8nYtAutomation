@@ -2,8 +2,8 @@
 
 ## Overview
 - **Trigger**: Manual (click to run)
-- **Nodes**: 17 | **Connections**: 16
-- **Estimated Runtime**: 2-4 minutes per video
+- **Nodes**: 15 | **Connections**: 14
+- **Estimated Runtime**: 3-5 minutes per video
 - **Monthly Cost**: $0.00 (all free APIs + local FFmpeg)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
 
@@ -28,19 +28,13 @@ Manual Trigger
 [Prepare Story Data] -- Code node: formats combined prompt for Gemini
     |
     v
-[Generate Script (Gemini)] -- Gemini 2.0 Flash: script, title, description, tags, 8 image prompts
+[Generate Script (Gemini)] -- Gemini 2.5 Flash: script, title, description, tags, 8 image prompts
     |
     v
 [Parse Script JSON] -- Code node: parses Gemini JSON response
     |
     v
-[Split Image Prompts] -- Splits array into individual items
-    |
-    v
-[Generate Images (Gemini)] -- Gemini 2.5 Flash Image: 8x vertical images (base64)
-    |
-    v
-[Collect All Images] -- Code node: extracts base64 image data into array
+[Generate Images (FLUX)] -- Code node: HuggingFace Spaces FLUX.1, 8x vertical images (768x1344)
     |
     v
 [Generate Voiceover (Gemini TTS)] -- Gemini 2.5 Flash TTS: PCM audio (base64)
@@ -171,44 +165,41 @@ return {
 
 **Parameters**:
 - Method: POST
-- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY`
+- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY`
 - Body: JSON with `contents`, `systemInstruction`, and `generationConfig`
 - `responseMimeType: 'application/json'` forces structured JSON output
 - System prompt: "tech news researcher and YouTube Shorts scriptwriter"
 - Requests: SCRIPT (80-95 words), TITLE (under 70 chars), DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
-- Timeout: 30000ms
+- Timeout: 60000ms
 
 ### Node 8: Parse Script JSON
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `parseScript`
 
-Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Extracts SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS. Falls back to regex extraction if response isn't clean JSON. Validates at least 4 image prompts.
+Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `findScriptData()` to recursively search for the SCRIPT field up to 2 levels deep — handles flat `{SCRIPT, ...}`, wrapped `{YOUTUBE_SHORT: {SCRIPT, ...}}`, and nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}` formats. Normalizes both UPPER and lowercase keys. Falls back to regex extraction if response isn't clean JSON. Validates at least 4 image prompts.
 
-### Node 9: Split Image Prompts
-- **Type**: `n8n-nodes-base.splitOut` (v1)
-- **ID**: `splitImages`
-
-Splits `imagePrompts` array into individual items for parallel image generation. Includes `script`, `title`, `description`, `tags` fields.
-
-### Node 10: Generate Images (Gemini)
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2)
-- **ID**: `generateImages`
-- **Auth**: API key in URL query parameter (no n8n credential)
-
-**Parameters**:
-- Method: POST
-- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=YOUR_GEMINI_API_KEY`
-- Body: `{ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }`
-- Returns base64 image data in `candidates[0].content.parts[].inlineData.data`
-- Timeout: 60000ms
-
-### Node 11: Collect All Images
+### Node 9: Generate Images (FLUX)
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `collectImages`
+- **ID**: `generateImages`
+- **External APIs**: Triple-provider fallback (all free, no API key needed)
 
-Collects all Gemini image base64 data into a single `imageBase64Array`. Iterates through candidates/parts looking for `inlineData` with image mimeType.
+**Providers** (tried in order):
+1. **Pollinations.ai** — GET request, 2 retries, 10s retry delay, 3s between images
+2. **HuggingFace Spaces** — `multimodalart/flux-1-merged` Gradio API, 2 retries, 15s retry delay, 20s between images
+3. **FFmpeg gradient** — local solid-color PNG generation (always works, guaranteed fallback)
 
-### Node 12: Generate Voiceover (Gemini TTS)
+**Logic**:
+1. Takes 8 image prompts from Parse Script JSON
+2. Writes a helper Node.js script to `/tmp/` (sandbox escape for `https` module access)
+3. For each prompt, tries providers in order until one succeeds
+4. Smart between-image delays based on which provider is working
+5. Returns `imageBase64Array` with all 8 images
+
+**Image specs**: 768x1344 pixels (approximately 9:16), base64-encoded.
+
+**Note**: The workflow **never fails** on image generation — at worst it falls back to gradient backgrounds. Pollinations.ai and HuggingFace Spaces are free public resources that may occasionally be down, which is why the triple fallback exists.
+
+### Node 10: Generate Voiceover (Gemini TTS)
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `voiceover`
 - **Auth**: API key in URL query parameter (no n8n credential)
@@ -234,45 +225,46 @@ Collects all Gemini image base64 data into a single `imageBase64Array`. Iterates
 - Voice options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr`
 - Timeout: 30000ms
 
-### Node 13: Compose Video (FFmpeg)
+### Node 11: Compose Video (FFmpeg)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `composeVideo`
 - **Requires**: `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` and FFmpeg installed
 
 **Logic**:
-1. Writes 8 base64 images to `/tmp/n8n_video_*/img_0.png` ... `img_7.png`
-2. Writes base64 PCM audio → converts to WAV via FFmpeg (`-f s16le -ar 24000 -ac 1`)
-3. Probes audio duration to calculate per-image timing
-4. Applies Ken Burns effect: alternating zoom-in/zoom-out on each image
-5. Crossfade transitions (0.5s) between images
-6. Overlays audio track
-7. Output: 1080x1920 vertical MP4 (libx264, CRF 23, AAC audio)
-8. Returns video as n8n binary data
-9. Cleans up temp files
+1. Gets images from `Generate Images (FLUX)` node — `imageBase64Array`
+2. Writes 8 base64 images to `/tmp/n8n_video_*/img_0.png` ... `img_7.png`
+3. Writes base64 PCM audio → converts to WAV via FFmpeg (`-f s16le -ar 24000 -ac 1`)
+4. Probes audio duration to calculate per-image timing
+5. Applies Ken Burns effect: alternating zoom-in/zoom-out on each image
+6. Crossfade transitions (0.5s) between images
+7. Overlays audio track
+8. Output: 1080x1920 vertical MP4 (libx264, CRF 23, AAC audio)
+9. Returns video as n8n binary data
+10. Cleans up temp files
 
 **Estimated render time**: 30-60 seconds for ~45-sec video at 1080x1920.
 
-### Node 14: Prepare YouTube Metadata
+### Node 12: Prepare YouTube Metadata
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `prepareYT`
 
 Appends `#Shorts` to title, adds hashtags to description, sets category 28 (Science & Technology), truncates title to 100 chars. Passes through binary video data.
 
-### Node 15: Upload to YouTube
+### Node 13: Upload to YouTube
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `youtubeUpload`
 - **Credential**: YouTube OAuth2 API
 
 Resource: `video`, Operation: `upload`. Binary property: `video`. Privacy: `public` (change to `unlisted` for testing). Category: 28. Tags joined with commas, notifySubscribers: true.
 
-### Node 16: Add to Playlist
+### Node 14: Add to Playlist
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `addToPlaylist`
 - **Credential**: YouTube OAuth2 API (same as Upload to YouTube)
 
 Resource: `playlistItem`. `playlistId`: `=YOUR_PLAYLIST_ID` — **SETUP REQUIRED** (use expression format `=PLxxxxxxx` to avoid dropdown loading error). `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`.
 
-### Node 17: Success Output
+### Node 15: Success Output
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `successOutput`
 
@@ -290,10 +282,8 @@ Fetch HN Posts                    -> Pick Best Story                    | main
 Pick Best Story                   -> Prepare Story Data                 | main
 Prepare Story Data                -> Generate Script (Gemini)           | main
 Generate Script (Gemini)          -> Parse Script JSON                  | main
-Parse Script JSON                 -> Split Image Prompts                | main
-Split Image Prompts               -> Generate Images (Gemini)           | main
-Generate Images (Gemini)          -> Collect All Images                 | main
-Collect All Images                -> Generate Voiceover (Gemini TTS)    | main
+Parse Script JSON                 -> Generate Images (FLUX)             | main
+Generate Images (FLUX)            -> Generate Voiceover (Gemini TTS)    | main
 Generate Voiceover (Gemini TTS)   -> Compose Video (FFmpeg)             | main
 Compose Video (FFmpeg)            -> Prepare YouTube Metadata            | main
 Prepare YouTube Metadata          -> Upload to YouTube                  | main
@@ -305,8 +295,10 @@ Add to Playlist                   -> Success Output                     | main
 
 | # | Credential Name | Type | Where to Get | Used By |
 |---|---|---|---|---|
-| 1 | Google AI Studio (Gemini) | API Key in URL | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Script Gen, Image Gen, Voiceover TTS |
+| 1 | Google AI Studio (Gemini) | API Key in URL | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Script Gen, Voiceover TTS |
 | 2 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
+
+**Note**: Image generation uses HuggingFace Spaces (free, no API key or credential needed).
 
 ## Troubleshooting
 
@@ -320,7 +312,15 @@ Add to Playlist                   -> Success Output                     | main
 ### Gemini API issues
 - "API key not valid": Verify at [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - 429 Too Many Requests: Free tier rate limit hit — wait a few minutes
-- Image generation returns text instead of image: Check `responseModalities: ['IMAGE', 'TEXT']` is set
+- Gemini 2.5 Flash has 5 RPM on free tier — sufficient for 1 script + 1 voiceover per run
+
+### Image generation issues
+- The node has triple-provider fallback (Pollinations → HuggingFace → FFmpeg gradient) — it should never fully fail
+- "Poll HTTP 530": Pollinations.ai origin server down — will automatically fall back to HuggingFace
+- "HF Space error": HuggingFace Space overloaded — will fall back to FFmpeg gradient backgrounds
+- If all external providers fail, gradient backgrounds are used (solid-color images)
+- Images are 768x1344 — FFmpeg upscales to 1080x1920 in the video composition step
+- Task runner timeout set to 900s via `N8N_RUNNERS_TASK_TIMEOUT=900` in docker-compose.yml
 
 ### YouTube upload fails
 - Re-authorize OAuth2 if token expired
@@ -335,12 +335,16 @@ Add to Playlist                   -> Success Output                     | main
 | Change script length | Edit Generate Script (Gemini) prompt word count target (currently 80-95 words) |
 | Change TTS voice | Edit Generate Voiceover jsonBody `voiceName` field. Options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
 | Change number of images | Edit Generate Script prompt (currently 8 IMAGE_PROMPTS) |
+| Change image providers | Edit Generate Images (FLUX) code — modify `providers` array or add new provider functions |
 | Schedule daily runs | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *`) |
 | Change playlist | Edit Add to Playlist node `playlistId` field |
 | Remove playlist | Delete Add to Playlist node, connect Upload to YouTube → Success Output |
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
+- **v5.2** (2026-02-23): Robust Parse Script JSON — `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
+- **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code.
+- **v5.0** (2026-02-23): Switched image generation from Gemini (0 free quota) to HuggingFace Spaces FLUX.1 (free, no API key). Switched script generation from Gemini 2.0 Flash (0 quota) to Gemini 2.5 Flash (5 RPM). Merged Split Image Prompts + Generate Images + Collect All Images into single Code node. 15 nodes, 14 connections. $0.00/video.
 - **v4.0** (2026-02-16): Migrated to completely free stack. Replaced OpenAI (GPT-5, DALL-E 3, TTS) with Gemini 2.0 Flash + 2.5 Flash Image + 2.5 Flash TTS (single Google AI Studio API key). Replaced Creatomate with local FFmpeg Ken Burns effect. 8 images instead of 4. 17 nodes, 16 connections. $0.00/video.
 - **v3.1** (2026-02-09): Added Add to Playlist node — videos are automatically added to a YouTube playlist after upload. 24 nodes, 23 connections.
 - **v3.0** (2026-02-09): Audio upload via tmpfiles.org (Creatomate requires real URLs, not data URIs). Split video data prep into 3 lightweight nodes to avoid OOM. Privacy set to public. 23 nodes, 22 connections.
