@@ -162,6 +162,7 @@ return {
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `scriptGen`
 - **Auth**: API key in URL query parameter (no n8n credential)
+- **Retry**: `retryOnFail: true`, `maxTries: 3`, `waitBetweenTries: 5000` (handles transient 503 errors)
 
 **Parameters**:
 - Method: POST
@@ -186,7 +187,7 @@ Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `fi
 **Providers** (tried in order):
 1. **Pollinations.ai** — GET request, 2 retries, 10s retry delay, 3s between images
 2. **HuggingFace Spaces** — `multimodalart/flux-1-merged` Gradio API, 2 retries, 15s retry delay, 20s between images
-3. **FFmpeg gradient** — local solid-color PNG generation (always works, guaranteed fallback)
+3. **FFmpeg gradient** — local solid-color PNG generation using `0x` hex colors (always works, guaranteed fallback)
 
 **Logic**:
 1. Takes 8 image prompts from Parse Script JSON
@@ -342,6 +343,7 @@ Add to Playlist                   -> Success Output                     | main
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
+- **v5.3** (2026-02-24): Fixed FFmpeg gradient fallback syntax error (unescaped double quotes). Added auto-retry (3 attempts, 5s delay) to Generate Script node for transient Gemini 503 errors. 15 nodes, 14 connections.
 - **v5.2** (2026-02-23): Robust Parse Script JSON — `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
 - **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code.
 - **v5.0** (2026-02-23): Switched image generation from Gemini (0 free quota) to HuggingFace Spaces FLUX.1 (free, no API key). Switched script generation from Gemini 2.0 Flash (0 quota) to Gemini 2.5 Flash (5 RPM). Merged Split Image Prompts + Generate Images + Collect All Images into single Code node. 15 nodes, 14 connections. $0.00/video.

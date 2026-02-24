@@ -141,6 +141,7 @@ These limits are sufficient for 1 script + 1 voiceover per run. Image generation
 - n8n auto-refreshes them, but if upload fails with auth error:
   - Go to the YouTube credential in n8n
   - Click **"Sign in with Google"** again to re-authorize
+- **Important**: If your Google Cloud app is in "Testing" mode, refresh tokens expire after **7 days**. To prevent this, go to Google Cloud Console → OAuth consent screen → Publishing status → **Publish App**. Published apps don't have the 7-day expiry (you can still restrict to your own account).
 
 ---
 
@@ -217,9 +218,10 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 - Ensure you're using `docker compose up -d` (sets `NODE_FUNCTION_ALLOW_BUILTIN` automatically)
 - If running manually: add `-e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` to your Docker command
 
-### "OAuth token expired" on YouTube
-- Go to the credential in n8n → click "Sign in with Google" again
+### "OAuth token expired" or "refresh token is invalid/expired/revoked" on YouTube
+- Go to the credential in n8n → click "Sign in with Google" again to re-authorize
 - Make sure you added yourself as a test user in Google Cloud Console
+- **If this keeps happening every 7 days**: Your app is in "Testing" mode. Go to Google Cloud Console → OAuth consent screen → Publishing status → **Publish App** to get permanent refresh tokens
 
 ### "Redirect URI mismatch" on YouTube OAuth
 - In Google Cloud Console → Credentials → edit your OAuth client
@@ -241,10 +243,10 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 - Wait until midnight Pacific Time for quota reset
 - Or request a quota increase in Google Cloud Console
 
-### Gemini rate limits
-- If you see 429 errors, you've hit the free tier rate limit
-- Wait a few minutes and try again
+### Gemini rate limits / 503 errors
+- If you see 429 errors, you've hit the free tier rate limit — wait a few minutes and try again
 - Limits reset per minute (RPM) and per day (RPD)
+- 503 "Service unavailable" errors are transient — the Generate Script node has auto-retry enabled (3 attempts, 5s delay)
 
 ---
 

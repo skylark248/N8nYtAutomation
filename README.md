@@ -225,10 +225,12 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 
 | Error | Fix |
 |---|---|
+| "Service unavailable" on Gemini | Transient 503 error — the Script node auto-retries 3 times. If persistent, wait a few minutes |
 | "API key not valid" on Gemini | Verify key at aistudio.google.com/apikeys, ensure it's not expired |
 | "Access blocked" on YouTube OAuth | Add yourself as test user: Google Cloud Console → OAuth consent screen → Audience → Add Users |
 | "This app isn't verified" | Click Advanced → "Go to n8n YouTube (unsafe)" — this is your own app, safe to proceed |
 | "Redirect URI mismatch" | Verify URI is exactly `http://localhost:5678/rest/oauth2-credential/callback` |
+| "Refresh token is invalid/expired/revoked" on YouTube | Re-authorize OAuth2 credential in n8n. If recurring every 7 days, publish your app (Google Cloud Console → OAuth consent screen → Publish App) |
 | "Quota exceeded" on YouTube | Wait until midnight Pacific Time (6 uploads/day max) |
 | FFmpeg "command not found" | Rebuild image: `docker compose build && docker compose up -d` |
 | "Cannot require 'child_process'" | Ensure you're using `docker compose up -d` (sets env var automatically) |

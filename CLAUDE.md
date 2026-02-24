@@ -168,7 +168,7 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 | 4 | Fetch HN Posts | `n8n-nodes-base.httpRequest` | v4.2 | `fetchHN` | GET hn.algolia.com/api/v1/search?tags=front_page |
 | 5 | Pick Best Story | `n8n-nodes-base.code` | v2 | `pickStory` | Combine Reddit + HN data into selection prompt |
 | 6 | Prepare Story Data | `n8n-nodes-base.code` | v2 | `parseAgent` | Format combined prompt with timestamp |
-| 7 | Generate Script (Gemini) | `n8n-nodes-base.httpRequest` | v4.2 | `scriptGen` | Gemini 2.5 Flash: script, title, tags, 8 image prompts |
+| 7 | Generate Script (Gemini) | `n8n-nodes-base.httpRequest` | v4.2 | `scriptGen` | Gemini 2.5 Flash: script, title, tags, 8 image prompts. Auto-retry: 3 attempts, 5s delay |
 | 8 | Parse Script JSON | `n8n-nodes-base.code` | v2 | `parseScript` | Parse Gemini JSON with fallback regex extraction |
 | 9 | Generate Images (FLUX) | `n8n-nodes-base.code` | v2 | `generateImages` | Triple-provider: Pollinations / HF FLUX.1 / gradient fallback |
 | 10 | Generate Voiceover (Gemini TTS) | `n8n-nodes-base.httpRequest` | v4.2 | `voiceover` | Gemini 2.5 Flash TTS: voice Kore, PCM base64 output |
@@ -218,6 +218,7 @@ Add to Playlist              -> Success Output                (main)
 - System instruction + user prompt requesting JSON output
 - `responseMimeType: 'application/json'` for structured output
 - Requests: SCRIPT (80-95 words), TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
+- Auto-retry: `retryOnFail: true, maxTries: 3, waitBetweenTries: 5000` (handles transient 503 errors)
 
 **Parse Script JSON** (Code node):
 - Reads from `$input.first().json.candidates[0].content.parts[0].text` (Gemini format)
@@ -233,7 +234,7 @@ Add to Playlist              -> Success Output                (main)
 - Writes helper Node.js script to `/tmp/` to escape n8n sandbox (needs `https` module)
 - Pollinations.ai: simple GET request to `image.pollinations.ai/prompt/{prompt}?width=768&height=1344`
 - HuggingFace: Gradio API to `multimodalart-flux-1-merged.hf.space` (POST to submit, GET SSE for result)
-- FFmpeg gradient: local `ffmpeg -f lavfi -i "color=c=#hex:s=768x1344" -frames:v 1` (always works)
+- FFmpeg gradient: local `ffmpeg -f lavfi -i color=c=0xHEX:s=768x1344 -frames:v 1` (always works, uses `0x` hex format to avoid shell quoting issues)
 - Smart between-image delays: 3s for Pollinations, 20s for HuggingFace
 - Outputs: `{ imageBase64Array: [...], imageCount: 8 }`
 - Timeout: up to 900s (controlled by `N8N_RUNNERS_TASK_TIMEOUT` env var)
@@ -344,6 +345,7 @@ Add to Playlist              -> Success Output                (main)
 
 ## Version History
 
+- **v5.3** (2026-02-24): Fixed FFmpeg gradient fallback syntax error (unescaped double quotes in color filter causing `Unexpected identifier 'color'`). Switched hex colors from `#` to `0x` format. Added auto-retry to Generate Script node (3 attempts, 5s delay) for transient Gemini 503 errors. 15 nodes, 14 connections.
 - **v5.2** (2026-02-23): Robust Parse Script JSON -- `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
 - **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code. Updated all documentation.
 - **v5.0** (2026-02-23): Switched image generation from Gemini (0 free quota) to HuggingFace Spaces FLUX.1 (free, no API key). Switched script generation from Gemini 2.0 Flash to Gemini 2.5 Flash (5 RPM). Merged Split Image Prompts + Generate Images + Collect All Images into single Code node. 15 nodes, 14 connections. $0.00/video.
@@ -368,6 +370,9 @@ This workflow evolved over multiple iterations (v1.0 -> v5.2):
 **v5.0-5.2 (Day 17)**: Gemini image generation quota dropped to 0. Switched to free external image APIs: Pollinations.ai (primary), HuggingFace Spaces FLUX.1 (fallback), FFmpeg gradient (guaranteed fallback). Merged Split/Generate/Collect image nodes into single Code node with sandbox escape pattern. Updated script generation from Gemini 2.0 Flash to 2.5 Flash. Added robust Parse Script JSON with `findScriptData()` to handle Gemini's variable response nesting. 15 nodes.
 
 Key issues encountered and resolved:
+- **FFmpeg gradient syntax error**: Unescaped double quotes in `"color=c=#hex..."` inside double-quoted JS string broke the string literal. Fixed by using `0x` hex format and removing all quotes from the ffmpeg command.
+- **Gemini 503 transient errors**: Gemini API occasionally returns 503 "Service unavailable". Fixed by enabling auto-retry on the Generate Script node (3 attempts, 5s delay).
+- **YouTube OAuth token expiry**: Refresh tokens expire after 7 days when the Google Cloud app is in "Testing" mode. Fixed by re-authorizing. Prevention: publish the app in Google Cloud Console.
 - **Reddit 403 Forbidden**: Reddit blocks bot-like User-Agent strings. Fixed by using `old.reddit.com` + Chrome browser UA + `Accept: application/json`.
 - **n8n OOM crashes**: Caused by `getBinaryDataBuffer()` in Code nodes. Fixed by keeping Code nodes lightweight.
 - **Gemini response format**: Different from OpenAI. Text in `candidates[0].content.parts[0].text`, images/audio in `inlineData.data` (base64).
