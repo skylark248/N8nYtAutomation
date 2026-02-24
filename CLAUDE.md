@@ -223,6 +223,9 @@ Add to Playlist              -> Success Output                (main)
 - Reads from `$input.first().json.candidates[0].content.parts[0].text` (Gemini format)
 - Primary: `JSON.parse(response)`
 - Fallback: regex `/\{[\s\S]*\}/` to extract JSON from markdown code blocks
+- Uses `findScriptData()` to recursively search for SCRIPT field up to 2 levels deep
+- Handles flat `{SCRIPT, ...}`, wrapped `{YOUTUBE_SHORT: {SCRIPT, ...}}`, and nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}` formats
+- Normalizes both UPPER and lowercase keys (SCRIPT/script, IMAGE_PROMPTS/image_prompts)
 - Validates required fields: SCRIPT, TITLE, IMAGE_PROMPTS array (minimum 4)
 
 **Generate Images (FLUX)** (Code node):
@@ -341,6 +344,7 @@ Add to Playlist              -> Success Output                (main)
 
 ## Version History
 
+- **v5.2** (2026-02-23): Robust Parse Script JSON -- `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
 - **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code. Updated all documentation.
 - **v5.0** (2026-02-23): Switched image generation from Gemini (0 free quota) to HuggingFace Spaces FLUX.1 (free, no API key). Switched script generation from Gemini 2.0 Flash to Gemini 2.5 Flash (5 RPM). Merged Split Image Prompts + Generate Images + Collect All Images into single Code node. 15 nodes, 14 connections. $0.00/video.
 - **v4.0** (2026-02-16): Migrated to completely free stack. Replaced OpenAI GPT-5 -> Gemini 2.0 Flash, DALL-E 3 -> Gemini 2.5 Flash Image, OpenAI TTS -> Gemini 2.5 Flash TTS, Creatomate -> FFmpeg Ken Burns. Increased to 8 images for ~45s video. Removed 8 nodes (Creatomate pipeline), added 1 (FFmpeg compose). 17 nodes, 16 connections. $0/month.
@@ -351,7 +355,7 @@ Add to Playlist              -> Success Output                (main)
 
 ## Development History
 
-This workflow evolved over multiple iterations (v1.0 -> v5.1):
+This workflow evolved over multiple iterations (v1.0 -> v5.2):
 
 **v1.0 (Day 1)**: Initial 18-node workflow with AI Agent for news research. Failed because AI Agent was unreliable for structured output.
 
@@ -361,7 +365,7 @@ This workflow evolved over multiple iterations (v1.0 -> v5.1):
 
 **v4.0 (Day 10)**: Complete migration to free APIs. Single Google AI Studio API key replaces all paid services. FFmpeg Ken Burns effect replaces Creatomate for local video composition. 8 images instead of 4 for full 45-second coverage. Docker requires `NODE_FUNCTION_ALLOW_BUILTIN` env var and `ffmpeg` installed. 17 nodes.
 
-**v5.0-5.1 (Day 17)**: Gemini image generation quota dropped to 0. Switched to free external image APIs: Pollinations.ai (primary), HuggingFace Spaces FLUX.1 (fallback), FFmpeg gradient (guaranteed fallback). Merged Split/Generate/Collect image nodes into single Code node with sandbox escape pattern. Updated script generation from Gemini 2.0 Flash to 2.5 Flash. 15 nodes.
+**v5.0-5.2 (Day 17)**: Gemini image generation quota dropped to 0. Switched to free external image APIs: Pollinations.ai (primary), HuggingFace Spaces FLUX.1 (fallback), FFmpeg gradient (guaranteed fallback). Merged Split/Generate/Collect image nodes into single Code node with sandbox escape pattern. Updated script generation from Gemini 2.0 Flash to 2.5 Flash. Added robust Parse Script JSON with `findScriptData()` to handle Gemini's variable response nesting. 15 nodes.
 
 Key issues encountered and resolved:
 - **Reddit 403 Forbidden**: Reddit blocks bot-like User-Agent strings. Fixed by using `old.reddit.com` + Chrome browser UA + `Accept: application/json`.
@@ -372,6 +376,7 @@ Key issues encountered and resolved:
 - **n8n Code node sandbox**: No `fetch`, `https`, or `curl`. Solution: write Node.js script to `/tmp/` and execute via `child_process.exec('node script.js')` — runs outside sandbox.
 - **Task runner timeout**: Default 300s too short for image generation with retries. Fixed with `N8N_RUNNERS_TASK_TIMEOUT=900` in docker-compose.yml.
 - **Free image API reliability**: Pollinations.ai returns HTTP 530 when overloaded, HuggingFace Spaces sleep/fail when busy. Fixed with triple-provider fallback chain.
+- **Gemini variable response nesting**: Gemini 2.5 Flash returns JSON in unpredictable structures — sometimes flat `{SCRIPT, ...}`, sometimes wrapped `{YOUTUBE_SHORT: {...}}`, sometimes nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}`. Fixed with `findScriptData()` recursive search up to 2 levels deep.
 - **YouTube quota**: 10,000 units/day, upload costs 1,600 units = max ~6 uploads/day.
 
 ## PC Upgrade Path (Future)
