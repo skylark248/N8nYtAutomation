@@ -34,7 +34,7 @@ Manual Trigger
 [Parse Script JSON] -- Code node: parses Gemini JSON response
     |
     v
-[Generate Images (FLUX)] -- Code node: Together.ai / Pollinations / Pexels / gradient, 8x images (768x1344)
+[Generate Images (FLUX)] -- Code node: Pollinations.ai / Pexels / gradient, 8x images (768x1344)
     |
     v
 [Generate Voiceover (Gemini TTS)] -- Gemini 2.5 Flash TTS: PCM audio (base64)
@@ -182,28 +182,25 @@ Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `fi
 ### Node 9: Generate Images (FLUX)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `generateImages`
-- **External APIs**: 4-provider fallback (all free, API keys via env vars)
+- **External APIs**: 3-provider fallback (all free, API keys hardcoded in Code node)
 
 **Providers** (tried in order):
-1. **Together.ai** — `POST api.together.xyz/v1/images/generations` with FLUX.1-schnell-Free model, returns base64 directly (~2s per image). Auth: `Bearer $TOGETHER_API_KEY`. 30s timeout, 2 attempts.
-2. **Pollinations.ai** — `GET image.pollinations.ai/prompt/{prompt}?model=flux&width=768&height=1344` with optional `Bearer $POLLINATIONS_SECRET_KEY` header (removes rate limits). 45s timeout, 1 attempt.
-3. **Pexels** — Keyword extraction from prompt, `GET api.pexels.com/v1/search?query={keywords}&orientation=portrait`, downloads `src.large2x` (real stock photos). Auth: `$PEXELS_API_KEY`. 15s timeout.
-4. **FFmpeg gradient** — local solid-color PNG generation using `0x` hex colors (always works, guaranteed fallback)
+1. **Pollinations.ai** — `GET gen.pollinations.ai/image/{prompt}?model=flux&width=768&height=1344` with `Bearer` secret key header (no rate limits). 45s timeout, 2 attempts.
+2. **Pexels** — Keyword extraction from prompt, `GET api.pexels.com/v1/search?query={keywords}&orientation=portrait`, downloads `src.large2x` (real stock photos). 15s timeout.
+3. **FFmpeg gradient** — local solid-color PNG generation using `0x` hex colors (always works, guaranteed fallback)
 
 **Logic**:
 1. Takes 8 image prompts from Parse Script JSON
-2. Reads API keys from env: `TOGETHER_API_KEY`, `POLLINATIONS_SECRET_KEY`, `PEXELS_API_KEY`
+2. API keys hardcoded in Code node jsCode (n8n sandbox blocks env var access; same approach as Gemini API key in URL)
 3. Writes a helper Node.js script to `/tmp/` (sandbox escape for `https` module access)
 4. Global 780s time budget with per-image budget checks
 5. For each prompt, tries providers in order until one succeeds (skips providers with missing keys)
-6. 5s delay between images
-7. Returns `imageBase64Array` with all 8 images
+6. 3s delay between images
+7. Returns `imageBase64Array`, `providers` array, and `providerSummary` string
 
 **Image specs**: 768x1344 pixels (approximately 9:16), base64-encoded.
 
-**Expected time**: 30-90s with Together.ai (vs 300-900s with old Pollinations/HuggingFace stack).
-
-**Note**: The workflow **never fails** on image generation — at worst it falls back to gradient backgrounds. All API keys are optional; the code gracefully skips providers with missing keys.
+**Note**: The workflow **never fails** on image generation — at worst it falls back to gradient backgrounds. The code gracefully skips providers with missing keys.
 
 ### Node 10: Generate Voiceover (Gemini TTS)
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
@@ -302,12 +299,11 @@ Add to Playlist                   -> Success Output                     | main
 | # | Credential Name | Type | Where to Get | Used By |
 |---|---|---|---|---|
 | 1 | Google AI Studio (Gemini) | API Key in URL | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Script Gen, Voiceover TTS |
-| 2 | Together.ai | Env var `TOGETHER_API_KEY` | [together.ai](https://www.together.ai/) — free | Generate Images |
-| 3 | Pollinations.ai | Env var `POLLINATIONS_SECRET_KEY` | [auth.pollinations.ai](https://auth.pollinations.ai/) — free | Generate Images |
-| 4 | Pexels | Env var `PEXELS_API_KEY` | [pexels.com/api](https://www.pexels.com/api/) — free | Generate Images |
-| 5 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
+| 2 | Pollinations.ai | Hardcoded in Code node | [auth.pollinations.ai](https://auth.pollinations.ai/) — free | Generate Images |
+| 3 | Pexels | Hardcoded in Code node | [pexels.com/api](https://www.pexels.com/api/) — free | Generate Images |
+| 4 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
 
-**Note**: Image generation API keys are optional — the code gracefully falls back through providers. At minimum, get a Together.ai key for best results.
+**Note**: Image generation API keys are optional — the code gracefully falls back through providers.
 
 ## Troubleshooting
 
@@ -324,10 +320,9 @@ Add to Playlist                   -> Success Output                     | main
 - Gemini 2.5 Flash has 5 RPM on free tier — sufficient for 1 script + 1 voiceover per run
 
 ### Image generation issues
-- The node has 4-provider fallback (Together.ai → Pollinations → Pexels → FFmpeg gradient) — it should never fully fail
-- All images are gradients: Set up API keys in `.env` (see setup-guide.md). At minimum, get a Together.ai key
-- Together.ai errors: Check `TOGETHER_API_KEY` is valid. Free tier gives unlimited FLUX.1-schnell-Free for 3 months
-- Pollinations.ai errors: With `POLLINATIONS_SECRET_KEY`, there are no rate limits. Without it, limited to 1 req/15s
+- The node has 3-provider fallback (Pollinations → Pexels → FFmpeg gradient) — it should never fully fail
+- All images are gradients: API keys may be missing from the Code node. Open Generate Images (FLUX) and verify the `pollinationsKey` and `pexelsKey` values in the config object
+- Pollinations.ai errors: With secret key, there are no rate limits. The API endpoint is `gen.pollinations.ai/image/` (not the legacy `image.pollinations.ai`)
 - Pexels returns irrelevant photos: The keyword extraction from AI prompts isn't perfect — Pexels is a fallback, not primary
 - If all external providers fail, gradient backgrounds are used (solid-color images)
 - Images are 768x1344 — FFmpeg upscales to 1080x1920 in the video composition step
@@ -347,14 +342,16 @@ Add to Playlist                   -> Success Output                     | main
 | Change script length | Edit Generate Script (Gemini) prompt word count target (currently 80-95 words) |
 | Change TTS voice | Edit Generate Voiceover jsonBody `voiceName` field. Options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
 | Change number of images | Edit Generate Script prompt (currently 8 IMAGE_PROMPTS) |
-| Change image providers | Edit Generate Images (FLUX) code — modify provider order or add new providers. API keys are read from env vars |
+| Change image providers | Edit Generate Images (FLUX) code — modify provider order or add new providers. API keys are hardcoded in jsCode |
 | Schedule daily runs | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *`) |
 | Change playlist | Edit Add to Playlist node `playlistId` field |
 | Remove playlist | Delete Add to Playlist node, connect Upload to YouTube → Success Output |
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
-- **v5.6** (2026-02-25): Overhauled image generation with 4-provider fallback: Together.ai FLUX.1-schnell-Free (primary, ~2s/image) → Pollinations.ai with secret key (secondary, no rate limit) → Pexels stock photos (fallback) → FFmpeg gradient (last resort). Added `TOGETHER_API_KEY`, `POLLINATIONS_SECRET_KEY`, `PEXELS_API_KEY` env vars. Global 780s time budget prevents timeout. Expected image gen: 30-90s (was 300-900s). 15 nodes, 14 connections. Still $0/month.
+- **v5.8** (2026-02-25): Fixed Pollinations.ai URL — migrated from legacy `image.pollinations.ai/prompt/` (down since Feb 13) to new unified `gen.pollinations.ai/image/` endpoint. API keys now hardcoded in Code node (n8n sandbox blocks env var access). Added provider tracking output (`providers`, `providerSummary`). Reduced inter-image delay from 5s to 3s. 15 nodes, 14 connections. $0/month.
+- **v5.7** (2026-02-25): Removed Together.ai (no longer free). Pollinations.ai with secret key is now primary provider, Pexels stock photos fallback, FFmpeg gradient last resort. 3-provider stack. Removed `TOGETHER_API_KEY` env var. 15 nodes, 14 connections. $0/month.
+- **v5.6** (2026-02-25): Overhauled image generation with 4-provider fallback. Added Together.ai, Pollinations.ai secret key, Pexels stock photos, FFmpeg gradient. Global 780s time budget prevents timeout. 15 nodes, 14 connections.
 - **v5.5** (2026-02-24): Fixed Gemini returning wrong format (STORY_TITLE/KEY_FACTS instead of SCRIPT/TITLE/IMAGE_PROMPTS). Removed conflicting format instructions from Pick Best Story prompt. Added system instruction to Generate Script node enforcing exact output keys. 15 nodes, 14 connections.
 - **v5.4** (2026-02-24): Fixed Pollinations.ai rate limiting (6/8 images falling back to gradient). Increased delays and retries. Added `N8N_RUNNERS_HEARTBEAT_INTERVAL=300` to prevent FFmpeg render kill. 15 nodes, 14 connections.
 - **v5.3** (2026-02-24): Fixed FFmpeg gradient fallback syntax error (unescaped double quotes). Added auto-retry (3 attempts, 5s delay) to Generate Script node for transient Gemini 503 errors. 15 nodes, 14 connections.
