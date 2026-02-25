@@ -2,7 +2,7 @@
 
 Automated pipeline that creates and publishes YouTube Shorts about trending tech/AI news — fully hands-free, completely free.
 
-**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 2.5 Flash) → Create images (Pollinations.ai / HuggingFace FLUX.1) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg Ken Burns) → Upload to YouTube → Add to playlist
+**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 2.5 Flash) → Create images (Together.ai FLUX.1 / Pollinations.ai / Pexels / FFmpeg gradient) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg Ken Burns) → Upload to YouTube → Add to playlist
 
 **Cost:** $0.00 per video (all free APIs + local FFmpeg)
 
@@ -17,7 +17,7 @@ Fetch trending tech news from Reddit + Hacker News (direct HTTP)
     ↓
 Gemini 2.5 Flash picks best story + writes 45-second script + 8 image prompts
     ↓
-Pollinations.ai / HuggingFace FLUX.1 generates 8 vertical images (768×1344)
+Together.ai FLUX.1 / Pollinations.ai / Pexels generates 8 vertical images (768×1344)
     ↓
 Gemini 2.5 Flash TTS creates voiceover narration (PCM audio)
     ↓
@@ -38,6 +38,7 @@ Before you start, make sure you have:
 - **Git** installed ([Get Git](https://git-scm.com/downloads))
 - **Google AI Studio API key** (free, no billing required) — [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - **Google account** with a YouTube channel
+- **Image generation API keys** (all free, all optional — see Step 5b below)
 
 ---
 
@@ -96,6 +97,36 @@ Open [http://localhost:5678](http://localhost:5678) in your browser. Create an a
    - **"Generate Voiceover (Gemini TTS)"**
 
 No n8n credential setup needed — the API key is passed directly in the URL query parameter.
+
+### Step 5b: Set Up Image Generation API Keys (Optional but Recommended)
+
+The workflow uses a 4-provider fallback for image generation. All keys are free and optional — the code skips providers with missing keys.
+
+1. **Together.ai** (primary, best quality, ~2s per image):
+   - Sign up at [together.ai](https://www.together.ai/)
+   - Go to **Settings** → **API Keys** → copy your key
+   - Free: unlimited FLUX.1-schnell-Free for 3 months + $25 credit
+
+2. **Pollinations.ai** (secondary, no rate limits with key):
+   - Sign up at [auth.pollinations.ai](https://auth.pollinations.ai/)
+   - Get secret key from [enter.pollinations.ai](https://enter.pollinations.ai/)
+   - Free: unlimited requests with `sk_` key
+
+3. **Pexels** (fallback, stock photos):
+   - Sign up at [pexels.com/api](https://www.pexels.com/api/)
+   - Get API key (instant approval)
+   - Free: 200 requests/hour
+
+Add these keys to your `.env` file (created in Step 2):
+```
+TOGETHER_API_KEY=your-key-here
+POLLINATIONS_SECRET_KEY=your-sk-key-here
+PEXELS_API_KEY=your-key-here
+```
+
+Then restart: `docker compose up -d` (picks up env vars automatically).
+
+> **Without any keys**: The workflow still works — it falls back to FFmpeg gradient backgrounds (solid colors). But with Together.ai, you get high-quality AI-generated images in ~2 seconds each.
 
 ### Step 6: Configure YouTube OAuth2
 
@@ -160,7 +191,7 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 | Service | Per Video | Monthly (30 videos) |
 |---|---|---|
 | Gemini 2.5 Flash (script) | $0.00 | $0.00 (free tier) |
-| Pollinations.ai / FLUX.1 (8 images) | $0.00 | $0.00 (free, no API key) |
+| Together.ai / Pollinations.ai / Pexels (8 images) | $0.00 | $0.00 (all free tiers) |
 | Gemini 2.5 Flash TTS (voiceover) | $0.00 | $0.00 (free tier) |
 | FFmpeg (video render) | $0.00 | $0.00 (local) |
 | YouTube API | $0.00 | $0.00 |
@@ -227,6 +258,7 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 |---|---|
 | "Service unavailable" on Gemini | Transient 503 error — the Script node auto-retries 3 times. If persistent, wait a few minutes |
 | "API key not valid" on Gemini | Verify key at aistudio.google.com/apikeys, ensure it's not expired |
+| All images are gradient backgrounds | Set up image generation API keys (see Step 5b). At minimum, get a Together.ai key |
 | "Access blocked" on YouTube OAuth | Add yourself as test user: Google Cloud Console → OAuth consent screen → Audience → Add Users |
 | "This app isn't verified" | Click Advanced → "Go to n8n YouTube (unsafe)" — this is your own app, safe to proceed |
 | "Redirect URI mismatch" | Verify URI is exactly `http://localhost:5678/rest/oauth2-credential/callback` |
@@ -234,6 +266,7 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 | "Quota exceeded" on YouTube | Wait until midnight Pacific Time (6 uploads/day max) |
 | FFmpeg "command not found" | Rebuild image: `docker compose build && docker compose up -d` |
 | "Cannot require 'child_process'" | Ensure you're using `docker compose up -d` (sets env var automatically) |
+| "Task execution timed out" on Generate Images | Check that API keys are set in `.env`. Together.ai is fastest (~2s/image vs 20s+ for Pollinations) |
 | n8n-mcp or n8n-skills folders are empty | Run `git submodule init && git submodule update` |
 
 Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
@@ -245,9 +278,10 @@ Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
 1. Import `exports/youtube-shorts-tech-news.json` on the new instance
 2. Replace `YOUR_GEMINI_API_KEY` in 2 nodes with your actual key
 3. Re-configure YouTube OAuth2 credential
-4. Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then run `docker compose up -d`
-5. Or manually: start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and install FFmpeg
-6. Test with `unlisted` before going public
+4. Add image generation API keys to `.env` file (optional but recommended)
+5. Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then run `docker compose up -d`
+6. Or manually: start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and install FFmpeg
+7. Test with `unlisted` before going public
 
 ---
 

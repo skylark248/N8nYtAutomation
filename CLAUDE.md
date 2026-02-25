@@ -44,7 +44,7 @@ The parent `/n8n/` directory contains `Dockerfile` and `docker-compose.yml` that
 
 **Files** (in parent `/n8n/` directory, NOT in this repo):
 - `Dockerfile` -- extends `n8nio/n8n:latest`, installs `ffmpeg-static` + `@ffprobe-installer/ffprobe` via npm, symlinks to `/usr/local/bin/`
-- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, mounts volume, `restart: unless-stopped`
+- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, `N8N_RUNNERS_HEARTBEAT_INTERVAL=300` (prevents FFmpeg render from being killed), image generation API keys (`TOGETHER_API_KEY`, `POLLINATIONS_SECRET_KEY`, `PEXELS_API_KEY`), mounts volume, `restart: unless-stopped`
 
 **Why custom image**: The official `n8nio/n8n` uses a hardened Alpine image without `apk` package manager. FFmpeg must be installed via npm global packages (`ffmpeg-static`, `@ffprobe-installer/ffprobe`) and symlinked to PATH.
 
@@ -148,8 +148,14 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 **Pipeline**: Fetch news (Reddit + HN) -> Generate script (Gemini 2.5 Flash) -> Create images (Pollinations.ai / HuggingFace FLUX.1 / gradient fallback) -> Voiceover (Gemini 2.5 Flash TTS) -> Compose video (FFmpeg Ken Burns) -> Upload to YouTube (public) -> Add to playlist
 
 **Required Credentials** (configure in n8n before running):
-1. **Google AI Studio API Key** - for Gemini script generation and Gemini TTS voiceover (passed in URL query params, no n8n credential needed). Image generation uses free APIs with no key.
+1. **Google AI Studio API Key** - for Gemini script generation and Gemini TTS voiceover (passed in URL query params, no n8n credential needed)
 2. **YouTube OAuth2** - for uploading videos and adding to playlist. Enable YouTube Data API v3 in Google Cloud Console. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
+
+**Image Generation API Keys** (set as env vars in docker-compose.yml or `.env` file):
+1. **Together.ai** (primary) - sign up at https://www.together.ai/ for free FLUX.1-schnell-Free. Set `TOGETHER_API_KEY`
+2. **Pollinations.ai** (secondary) - sign up at https://auth.pollinations.ai/ for unlimited secret key. Set `POLLINATIONS_SECRET_KEY`
+3. **Pexels** (fallback) - sign up at https://www.pexels.com/api/ for stock photos. Set `PEXELS_API_KEY`
+- All keys are optional — the code gracefully skips providers with missing keys and falls back to the next one
 
 **Required Docker Setup** (handled automatically by `docker compose up -d`):
 - Custom Dockerfile with FFmpeg + ffprobe baked in (installed via `npm -g ffmpeg-static @ffprobe-installer/ffprobe`)
@@ -209,13 +215,13 @@ Add to Playlist              -> Success Output                (main)
 - Takes top 10, formats as `"1. [Score: X] Title (Y comments)"`
 
 **Pick Best Story** (Code node):
-- Combines Reddit summary + HN summary
-- Creates prompt asking AI to pick the SINGLE most interesting tech/AI story
+- Combines Reddit summary + HN summary into `combinedPrompt` (raw headlines only, no format instructions)
 - References Format Reddit Data via `$('Format Reddit Data').first().json.redditSummary`
 
 **Generate Script (Gemini)** (HTTP Request):
 - POST `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=API_KEY`
-- System instruction + user prompt requesting JSON output
+- System instruction enforces output format: "ALWAYS respond with a JSON object containing these exact keys: SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS"
+- User prompt: pick best story + write script in one step (no conflicting format instructions)
 - `responseMimeType: 'application/json'` for structured output
 - Requests: SCRIPT (80-95 words), TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
 - Auto-retry: `retryOnFail: true, maxTries: 3, waitBetweenTries: 5000` (handles transient 503 errors)
@@ -226,18 +232,22 @@ Add to Playlist              -> Success Output                (main)
 - Fallback: regex `/\{[\s\S]*\}/` to extract JSON from markdown code blocks
 - Uses `findScriptData()` to recursively search for SCRIPT field up to 2 levels deep
 - Handles flat `{SCRIPT, ...}`, wrapped `{YOUTUBE_SHORT: {SCRIPT, ...}}`, and nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}` formats
+- Detects wrong format (STORY_TITLE/KEY_FACTS) and throws clear error
 - Normalizes both UPPER and lowercase keys (SCRIPT/script, IMAGE_PROMPTS/image_prompts)
 - Validates required fields: SCRIPT, TITLE, IMAGE_PROMPTS array (minimum 4)
 
 **Generate Images (FLUX)** (Code node):
-- Triple-provider fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient
+- 4-provider fallback: Together.ai → Pollinations.ai → Pexels stock photos → FFmpeg gradient
 - Writes helper Node.js script to `/tmp/` to escape n8n sandbox (needs `https` module)
-- Pollinations.ai: simple GET request to `image.pollinations.ai/prompt/{prompt}?width=768&height=1344`
-- HuggingFace: Gradio API to `multimodalart-flux-1-merged.hf.space` (POST to submit, GET SSE for result)
-- FFmpeg gradient: local `ffmpeg -f lavfi -i color=c=0xHEX:s=768x1344 -frames:v 1` (always works, uses `0x` hex format to avoid shell quoting issues)
-- Smart between-image delays: 3s for Pollinations, 20s for HuggingFace
+- Together.ai: `POST api.together.xyz/v1/images/generations` with FLUX.1-schnell-Free model, returns base64 directly (~2s per image)
+- Pollinations.ai: `GET image.pollinations.ai/prompt/{prompt}?model=flux&width=768&height=1344` with optional secret key for no rate limits
+- Pexels: keyword search `GET api.pexels.com/v1/search?query={keywords}&orientation=portrait`, downloads `src.large2x` (real photos)
+- FFmpeg gradient: local `ffmpeg -f lavfi -i color=c=0xHEX:s=768x1344 -frames:v 1` (always works)
+- API keys read from env: `TOGETHER_API_KEY`, `POLLINATIONS_SECRET_KEY`, `PEXELS_API_KEY` (gracefully skips if missing)
+- Global 780s time budget with per-image budget checks (auto-falls back to Pexels/gradient when low)
+- Between-image delay: 5s
 - Outputs: `{ imageBase64Array: [...], imageCount: 8 }`
-- Timeout: up to 900s (controlled by `N8N_RUNNERS_TASK_TIMEOUT` env var)
+- Expected total time: 30-90s with Together.ai (vs 300-900s with old providers)
 
 **Generate Voiceover (Gemini TTS)** (HTTP Request):
 - POST `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=API_KEY`
@@ -345,6 +355,9 @@ Add to Playlist              -> Success Output                (main)
 
 ## Version History
 
+- **v5.6** (2026-02-25): Overhauled image generation: replaced Pollinations+HuggingFace stack with Together.ai FLUX.1-schnell-Free (primary, ~2s/image), Pollinations.ai with secret key (secondary, no rate limit), Pexels stock photos (fallback, real photos instead of gradients), FFmpeg gradient (last resort). Added `TOGETHER_API_KEY`, `POLLINATIONS_SECRET_KEY`, `PEXELS_API_KEY` env vars. Global time budget prevents timeout. Expected image gen: 30-90s (was 300-900s). 15 nodes, 14 connections. Still $0/month.
+- **v5.5** (2026-02-24): Fixed Gemini returning story analysis format (STORY_TITLE/KEY_FACTS) instead of script format (SCRIPT/TITLE/IMAGE_PROMPTS). Root cause: Pick Best Story's `combinedPrompt` included conflicting format instructions that confused Gemini's JSON mode. Fix: removed format instructions from `combinedPrompt` (raw headlines only), rewrote Generate Script prompt as single-step instruction, added system instruction enforcing exact output keys. Parse Script JSON now detects wrong format and throws clear error. 15 nodes, 14 connections.
+- **v5.4** (2026-02-24): Fixed Pollinations.ai rate limiting causing 6/8 images to fall back to gradient. Increased between-image delay from 3s to 10s. Increased retries from 2 to 3 per provider with exponential backoff (15s/30s for Pollinations, 20s/40s for HuggingFace). Added `N8N_RUNNERS_HEARTBEAT_INTERVAL=300` to docker-compose.yml to prevent FFmpeg render from being killed as "unresponsive". 15 nodes, 14 connections.
 - **v5.3** (2026-02-24): Fixed FFmpeg gradient fallback syntax error (unescaped double quotes in color filter causing `Unexpected identifier 'color'`). Switched hex colors from `#` to `0x` format. Added auto-retry to Generate Script node (3 attempts, 5s delay) for transient Gemini 503 errors. 15 nodes, 14 connections.
 - **v5.2** (2026-02-23): Robust Parse Script JSON -- `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
 - **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code. Updated all documentation.
