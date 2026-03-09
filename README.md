@@ -2,9 +2,9 @@
 
 Automated pipeline that creates and publishes YouTube Shorts about trending tech/AI news — fully hands-free, completely free.
 
-**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 2.5 Flash) → Create images (Pollinations.ai FLUX / Pexels / FFmpeg gradient) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg Ken Burns) → Upload to YouTube → Add to playlist
+**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base 1.0) → Animate images (ComfyUI HunyuanVideo I2V) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg) → Upload to YouTube → Add to playlist
 
-**Cost:** $0.00 per video (all free APIs + local FFmpeg)
+**Cost:** $0.00 per video (all local AI generation + free APIs)
 
 ---
 
@@ -15,13 +15,15 @@ Manual Trigger
     ↓
 Fetch trending tech news from Reddit + Hacker News (direct HTTP)
     ↓
-Gemini 2.5 Flash picks best story + writes 45-second script + 8 image prompts
+Gemini 3 Flash picks best story + writes 45-second script + 8 image prompts
     ↓
-Pollinations.ai FLUX / Pexels generates 8 vertical images (768×1344)
+ComfyUI SDXL base 1.0 generates 8 vertical images (768×1344) — ~5-6 min
     ↓
-Gemini 2.5 Flash TTS creates voiceover narration (PCM audio)
+ComfyUI HunyuanVideo I2V animates each image into a video clip (544×960) — ~60-100 min
     ↓
-FFmpeg composes video with Ken Burns zoom/pan effect + crossfade transitions
+Gemini 3 Flash TTS creates voiceover narration (PCM audio)
+    ↓
+FFmpeg stitches clips + slow-stretch + crossfade + audio overlay → 1080×1920 MP4
     ↓
 Uploads to YouTube as a Short with full metadata
     ↓
@@ -34,11 +36,12 @@ Adds video to your YouTube playlist
 
 Before you start, make sure you have:
 
+- **Windows PC with NVIDIA GPU** (RTX 3070 Ti or similar, 8GB+ VRAM, 32GB+ RAM recommended)
+- **ComfyUI** installed with SDXL base 1.0 + HunyuanVideo I2V models (~24GB) — see [comfyui/README.md](comfyui/README.md)
 - **Docker** installed ([Get Docker](https://docs.docker.com/get-docker/))
 - **Git** installed ([Get Git](https://git-scm.com/downloads))
 - **Google AI Studio API key** (free, no billing required) — [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - **Google account** with a YouTube channel
-- **Image generation API keys** (free — see Step 5b below)
 
 ---
 
@@ -66,19 +69,26 @@ Open `.env` and fill in your API keys (this file is for your reference — crede
 
 ### Step 3: Start n8n with Docker Compose
 
-The repo includes a `Dockerfile` and `docker-compose.yml` in the parent directory that build a custom n8n image with FFmpeg baked in — no manual installation needed.
+The `D:\N8n\` directory contains a `Dockerfile` and `docker-compose.yml` that build a custom n8n image with FFmpeg baked in — no manual installation needed.
 
 ```bash
+cd D:\N8n
+
+# First time only — build the custom image:
+docker compose build
+
+# Start n8n:
 docker compose up -d
 ```
 
-This single command:
-- Builds a custom image with FFmpeg + ffprobe pre-installed
-- Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition)
-- Mounts the current directory as n8n data volume
-- Auto-restarts with Docker Desktop (`restart: unless-stopped`)
+This builds an image that:
+- Includes FFmpeg + ffprobe for video composition
+- Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
+- Sets task timeout to 150 min for ComfyUI generation (`N8N_RUNNERS_TASK_TIMEOUT=9000`)
+- Adds `host.docker.internal` for Docker→ComfyUI connectivity
+- Auto-restarts with Docker Desktop
 
-Open [http://localhost:5678](http://localhost:5678) in your browser. Create an account when prompted (this is your local instance, data stays on your machine).
+Open [http://localhost:5678](http://localhost:5678) in your browser. Create an account when prompted.
 
 > **Note**: The official `n8nio/n8n` image uses a hardened Alpine without `apk`. The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` instead.
 
@@ -87,7 +97,7 @@ Open [http://localhost:5678](http://localhost:5678) in your browser. Create an a
 1. In n8n, click **"Add workflow"** (or the import icon)
 2. Click **"Import from file"**
 3. Select `exports/youtube-shorts-tech-news.json` from the cloned repo
-4. The full 15-node workflow appears ready to configure
+4. The full 16-node workflow appears ready to configure
 
 ### Step 5: Add Your Gemini API Key
 
@@ -98,25 +108,18 @@ Open [http://localhost:5678](http://localhost:5678) in your browser. Create an a
 
 No n8n credential setup needed — the API key is passed directly in the URL query parameter.
 
-### Step 5b: Set Up Image Generation API Keys (Optional but Recommended)
+### Step 5b: Set Up ComfyUI (Local AI Generation)
 
-The workflow uses a 3-provider fallback for image generation. Both keys are free.
+The workflow uses ComfyUI on the Windows host for image and video generation. Follow the full guide in [comfyui/README.md](comfyui/README.md), or the quick version:
 
-1. **Pollinations.ai** (primary, AI-generated images, ~10-20s per image):
-   - Sign up at [auth.pollinations.ai](https://auth.pollinations.ai/)
-   - Get secret key from [enter.pollinations.ai](https://enter.pollinations.ai/)
-   - Free: unlimited requests with `sk_` key (no rate limits)
+1. **Install ComfyUI** — Download portable from [GitHub releases](https://github.com/Comfy-Org/ComfyUI/releases), extract to `C:\ComfyUI`
+2. **Install custom nodes** — Run `comfyui\setup\install-custom-nodes.ps1`
+3. **Download models** (~24GB) — Run `comfyui\setup\install-models.ps1`
+4. **Start ComfyUI** — Run `comfyui\setup\run_api_server.bat`
+5. **Allow firewall** — `New-NetFirewallRule -DisplayName "ComfyUI API" -Direction Inbound -Protocol TCP -LocalPort 8188 -Action Allow`
+6. **Verify**: `curl http://localhost:8188/system_stats` should return GPU info
 
-2. **Pexels** (fallback, stock photos):
-   - Sign up at [pexels.com/api](https://www.pexels.com/api/)
-   - Get API key (instant approval)
-   - Free: 200 requests/hour
-
-In n8n, open the **"Generate Images (FLUX)"** node and replace the keys in the config object:
-- `pollinationsKey: 'your-sk-key-here'`
-- `pexelsKey: 'your-pexels-key-here'`
-
-> **Without any keys**: The workflow still works — it falls back to FFmpeg gradient backgrounds (solid colors). With Pollinations.ai, you get AI-generated images via FLUX.
+> **ComfyUI must be running** whenever you execute the n8n workflow. n8n Docker connects to it via `http://host.docker.internal:8188`.
 
 ### Step 6: Configure YouTube OAuth2
 
@@ -142,9 +145,10 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 
 1. In n8n, open the **"Upload to YouTube"** node
 2. Change `privacyStatus` from `public` to `unlisted` (so it doesn't go live immediately)
-3. Click **"Test Workflow"** (play button in top-right)
-4. Wait 3-5 minutes for the full pipeline to complete
-5. Check [YouTube Studio](https://studio.youtube.com) — your Short should appear as unlisted
+3. Make sure **ComfyUI is running** (`curl http://localhost:8188/system_stats`)
+4. Click **"Test Workflow"** (play button in top-right)
+5. Wait **80-110 minutes** for the full pipeline (most time is HunyuanVideo I2V animation)
+6. Check [YouTube Studio](https://studio.youtube.com) — your Short should appear as unlisted
 6. Once verified, change `privacyStatus` back to `public` for future runs
 
 ---
@@ -157,6 +161,17 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 ├── .env.example                           # Template for API keys (copy to .env)
 ├── .gitignore                             # Keeps secrets out of git
 ├── .gitmodules                            # Git submodule references
+│
+├── comfyui/                               # Local AI generation setup
+│   ├── README.md                          # ComfyUI setup guide
+│   ├── workflows/                         # ComfyUI API-format workflow templates
+│   │   ├── sdxl-text-to-image.json        #   SDXL base 1.0 (768x1344) — reference
+│   │   ├── flux-nf4-text-to-image.json    #   FLUX.1 Dev NF4 (768x1344) — legacy/unused
+│   │   └── hunyuan-i2v-gguf-q4.json       #   HunyuanVideo I2V (544x960, 49 frames)
+│   └── setup/                             # Installation scripts
+│       ├── install-models.ps1             #   Download ~24GB of models
+│       ├── install-custom-nodes.ps1       #   Clone NF4 + GGUF custom nodes
+│       └── run_api_server.bat             #   Launch ComfyUI API server
 │
 ├── docs/
 │   ├── setup-guide.md                     # Step-by-step credential setup
@@ -180,12 +195,14 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 
 | Service | Per Video | Monthly (30 videos) |
 |---|---|---|
-| Gemini 2.5 Flash (script) | $0.00 | $0.00 (free tier) |
-| Pollinations.ai / Pexels (8 images) | $0.00 | $0.00 (free tiers) |
-| Gemini 2.5 Flash TTS (voiceover) | $0.00 | $0.00 (free tier) |
-| FFmpeg (video render) | $0.00 | $0.00 (local) |
+| Gemini 3 Flash (script) | $0.00 | $0.00 (free tier) |
+| ComfyUI SDXL base 1.0 (8 images) | $0.00 | $0.00 (local GPU) |
+| ComfyUI HunyuanVideo I2V (8 clips) | $0.00 | $0.00 (local GPU) |
+| Gemini 3 Flash TTS (voiceover) | $0.00 | $0.00 (free tier) |
+| FFmpeg (video stitch) | $0.00 | $0.00 (local) |
 | YouTube API | $0.00 | $0.00 |
-| **Total** | **$0.00** | **$0.00** |
+| Electricity (~80-110 min GPU) | ~$0.06 | ~$1.80 |
+| **Total** | **~$0.06** | **~$1.80** |
 
 ---
 
@@ -194,7 +211,7 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 | What | How |
 |---|---|
 | Change news sources | Edit the Fetch Reddit Posts URL or Pick Best Story code |
-| Change script length | Edit "Generate Script" node — adjust word count (currently 80-95 words) |
+| Change script length | Edit "Generate Script" node — adjust word count (currently 110-120 words) |
 | Change TTS voice | Edit "Generate Voiceover" node — options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
 | Add scheduled trigger | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *` for daily 9 AM) |
 | Multi-platform posting | Add Blotato node for TikTok, Instagram Reels |
@@ -248,7 +265,8 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 |---|---|
 | "Service unavailable" on Gemini | Transient 503 error — the Script node auto-retries 3 times. If persistent, wait a few minutes |
 | "API key not valid" on Gemini | Verify key at aistudio.google.com/apikeys, ensure it's not expired |
-| All images are gradient backgrounds | Set up image generation API keys (see Step 5b). Get a Pollinations.ai secret key |
+| "Connection refused" on image/video gen | ComfyUI not running. Start it with `comfyui\setup\run_api_server.bat` |
+| OOM error on ComfyUI | Close other GPU apps. SDXL needs ~5-6GB, Hunyuan needs ~7-8GB VRAM |
 | "Access blocked" on YouTube OAuth | Add yourself as test user: Google Cloud Console → OAuth consent screen → Audience → Add Users |
 | "This app isn't verified" | Click Advanced → "Go to n8n YouTube (unsafe)" — this is your own app, safe to proceed |
 | "Redirect URI mismatch" | Verify URI is exactly `http://localhost:5678/rest/oauth2-credential/callback` |
@@ -256,7 +274,7 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 | "Quota exceeded" on YouTube | Wait until midnight Pacific Time (6 uploads/day max) |
 | FFmpeg "command not found" | Rebuild image: `docker compose build && docker compose up -d` |
 | "Cannot require 'child_process'" | Ensure you're using `docker compose up -d` (sets env var automatically) |
-| "Task execution timed out" on Generate Images | Check API keys in the Generate Images Code node. Pollinations with secret key has no rate limits |
+| "Task execution timed out" | Ensure `N8N_RUNNERS_TASK_TIMEOUT=9000` in docker-compose.yml (150 min for ComfyUI, value is in seconds) |
 | n8n-mcp or n8n-skills folders are empty | Run `git submodule init && git submodule update` |
 
 Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
@@ -268,59 +286,43 @@ Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
 1. Import `exports/youtube-shorts-tech-news.json` on the new instance
 2. Replace `YOUR_GEMINI_API_KEY` in 2 nodes with your actual key
 3. Re-configure YouTube OAuth2 credential
-4. Replace image generation API keys in the Generate Images (FLUX) Code node (`pollinationsKey`, `pexelsKey`)
-5. Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then run `docker compose up -d`
-6. Or manually: start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and install FFmpeg
+4. Set up ComfyUI with SDXL base 1.0 + HunyuanVideo I2V models (see [comfyui/README.md](comfyui/README.md))
+5. Copy `Dockerfile` and `docker-compose.yml` from `D:\N8n\` to the new n8n directory, then run `docker compose build && docker compose up -d`
+6. Ensure ComfyUI is running and reachable from Docker (`http://host.docker.internal:8188`)
 7. Test with `unlisted` before going public
 
 ---
 
-## PC Upgrade Path (GPU-Accelerated AI Video)
+## Hardware Requirements
 
-If you have a PC with an NVIDIA GPU (e.g., RTX 3070 Ti + 32GB RAM), you can upgrade from FFmpeg Ken Burns (zoom/pan on static images) to **AI-animated video clips** using Stable Video Diffusion:
-
-### What Changes
-
-| Component | Current (Mac) | Upgraded (PC with GPU) |
+| Component | Minimum | Recommended (current setup) |
 |---|---|---|
-| Video Generation | FFmpeg Ken Burns (zoom/pan) | SVD image-to-video animation |
-| Video Quality | Professional slideshows | AI-animated motion |
-| Render Time | 30-60s | 30-60s per clip (8 clips) |
-| Hardware | Any CPU | NVIDIA GPU (6GB+ VRAM) |
+| GPU | NVIDIA RTX 3060 (8GB VRAM) | RTX 3070 Ti (8GB VRAM) |
+| RAM | 16GB | 32GB DDR4 |
+| CPU | Any modern x86_64 | Ryzen 5 5600X |
+| Storage | ~35GB free (ComfyUI + models) | NVMe SSD |
 
-### Setup Steps
+### VRAM Budget
 
-1. **Install ComfyUI** on your PC:
-   ```bash
-   git clone https://github.com/comfyanonymous/ComfyUI.git
-   cd ComfyUI && pip install -r requirements.txt
-   ```
+| Phase | Peak VRAM | Notes |
+|-------|-----------|-------|
+| SDXL base 1.0 image gen | ~5-6 GB | Fits on 8GB VRAM without special flags |
+| HunyuanVideo I2V | ~7-8 GB | GGUF offloads weights to system RAM |
 
-2. **Download SVD model** (~4GB):
-   - Download `svd_xt_1_1.safetensors` from Hugging Face
-   - Place in `ComfyUI/models/checkpoints/`
+Models are loaded/unloaded sequentially — they cannot coexist in VRAM. ComfyUI handles the swap automatically.
 
-3. **Start ComfyUI as API server** (accessible from network):
-   ```bash
-   python main.py --listen 0.0.0.0 --port 8188
-   ```
+### Timeline Per Video
 
-4. **Update n8n workflow**:
-   - Replace the "Compose Video (FFmpeg)" node with HTTP Request calls to ComfyUI
-   - Each image → POST to `http://YOUR_PC_IP:8188/prompt` with SVD workflow
-   - Collect 8 animated clips → FFmpeg stitches them + adds audio
-   - n8n Docker can reach your PC via local network IP (e.g., `192.168.1.100`)
-
-5. **Requirements**:
-   - NVIDIA GPU with 6GB+ VRAM (RTX 3060+)
-   - 16GB+ system RAM
-   - ComfyUI running and accessible from Docker network
-
-### Future Possibilities
-
-- **AnimateDiff**: Lower VRAM usage (4-6GB), cartoon/stylized animation
-- **CogVideoX-2B**: Text-to-video, tighter VRAM (7-8GB on RTX 3070 Ti)
-- **Wan2.1**: Latest open-source video model, excellent quality
+| Stage | Time |
+|-------|------|
+| Fetch news + script gen | ~1 min |
+| SDXL images (8×35-45s) | ~5-6 min |
+| Model swap (SDXL→Hunyuan) | ~0.5-1 min |
+| HunyuanVideo clips (8×49 frames) | ~65-100 min |
+| Voiceover (Gemini TTS) | ~10 sec |
+| FFmpeg stitch + audio (2-pass) | ~8-12 min |
+| YouTube upload | ~1-2 min |
+| **Total** | **~80-110 min** |
 
 ---
 
@@ -330,4 +332,4 @@ If you have a PC with an NVIDIA GPU (e.g., RTX 3070 Ti + 32GB RAM), you can upgr
 - Add multi-platform posting (TikTok, Instagram Reels)
 - Add thumbnail generation with text overlay
 - A/B test titles for better CTR
-- Integrate ComfyUI for AI-animated video clips (PC upgrade path above)
+- Upgrade to higher-quality video models as VRAM allows (Wan2.1, CogVideoX)

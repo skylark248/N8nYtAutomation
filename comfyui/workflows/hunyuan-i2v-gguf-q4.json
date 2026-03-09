@@ -1,0 +1,89 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": { "unet_name": "hunyuan-video-i2v-720p-Q4_K_M.gguf" }
+  },
+  "2": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "split_files\\text_encoder\\llava_llama3_fp8_scaled.safetensors",
+      "clip_name2": "clip_l.safetensors",
+      "type": "hunyuan_video"
+    }
+  },
+  "3": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": { "clip_name": "split_files\\clip_vision\\llava_llama3_vision.safetensors" }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "split_files\\vae\\hunyuan_video_vae_bf16.safetensors" }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "PLACEHOLDER_IMAGE_FILENAME" }
+  },
+  "6": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": { "clip_vision": ["3", 0], "image": ["5", 0], "crop": "center" }
+  },
+  "7": {
+    "class_type": "TextEncodeHunyuanVideo_ImageToVideo",
+    "inputs": {
+      "prompt": "PLACEHOLDER_MOTION_PROMPT",
+      "clip": ["2", 0],
+      "clip_vision_output": ["6", 0],
+      "image_interleave": 2
+    }
+  },
+  "8": {
+    "class_type": "HunyuanImageToVideo",
+    "inputs": {
+      "positive": ["7", 0],
+      "vae": ["4", 0],
+      "width": 544,
+      "height": 960,
+      "length": 25,
+      "batch_size": 1,
+      "guidance_type": "v2 (replace)",
+      "start_image": ["5", 0]
+    }
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "", "clip": ["2", 0] }
+  },
+  "10": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["8", 0],
+      "negative": ["9", 0],
+      "latent_image": ["8", 1],
+      "seed": 0,
+      "steps": 15,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "11": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": ["10", 0],
+      "vae": ["4", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 4
+    }
+  },
+  "12": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "hunyuan_n8n",
+      "images": ["11", 0]
+    }
+  }
+}

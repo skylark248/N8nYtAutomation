@@ -2,9 +2,9 @@
 
 ## Overview
 - **Trigger**: Manual (click to run)
-- **Nodes**: 15 | **Connections**: 14
-- **Estimated Runtime**: 3-5 minutes per video
-- **Monthly Cost**: $0.00 (all free APIs + local FFmpeg)
+- **Nodes**: 16 | **Connections**: 15
+- **Estimated Runtime**: 80-110 minutes per video (local AI generation)
+- **Monthly Cost**: $0.00 (all local AI + free APIs)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
 
 ## Pipeline
@@ -28,19 +28,22 @@ Manual Trigger
 [Prepare Story Data] -- Code node: formats combined prompt for Gemini
     |
     v
-[Generate Script (Gemini)] -- Gemini 2.5 Flash: script, title, description, tags, 8 image prompts
+[Generate Script (Gemini)] -- Gemini 3 Flash: script, title, description, tags, 8 image prompts
     |
     v
 [Parse Script JSON] -- Code node: parses Gemini JSON response
     |
     v
-[Generate Images (FLUX)] -- Code node: Pollinations.ai / Pexels / gradient, 8x images (768x1344)
+[Generate Images (ComfyUI SDXL)] -- Code node: SDXL base 1.0 via ComfyUI API, 8x images (768x1344)
     |
     v
-[Generate Voiceover (Gemini TTS)] -- Gemini 2.5 Flash TTS: PCM audio (base64)
+[Animate Images (ComfyUI Hunyuan)] -- Code node: HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960)
     |
     v
-[Compose Video (FFmpeg)] -- Code node: Ken Burns zoom/pan + crossfade + audio overlay
+[Generate Voiceover (Gemini TTS)] -- Gemini 3 Flash TTS: PCM audio (base64)
+    |
+    v
+[Compose Video (FFmpeg)] -- Code node: stitch clips + slow-stretch + crossfade + audio overlay
     |
     v
 [Prepare YouTube Metadata] -- Adds #Shorts, sets category, formats tags
@@ -166,11 +169,11 @@ return {
 
 **Parameters**:
 - Method: POST
-- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY`
+- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=YOUR_GEMINI_API_KEY`
 - Body: JSON with `contents`, `systemInstruction`, and `generationConfig`
 - `responseMimeType: 'application/json'` forces structured JSON output
 - System prompt: "tech news researcher and YouTube Shorts scriptwriter"
-- Requests: SCRIPT (80-95 words), TITLE (under 70 chars), DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
+- Requests: SCRIPT (110-120 words), TITLE (under 70 chars), DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
 - Timeout: 60000ms
 
 ### Node 8: Parse Script JSON
@@ -179,33 +182,57 @@ return {
 
 Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `findScriptData()` to recursively search for the SCRIPT field up to 2 levels deep — handles flat `{SCRIPT, ...}`, wrapped `{YOUTUBE_SHORT: {SCRIPT, ...}}`, and nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}` formats. Normalizes both UPPER and lowercase keys. Falls back to regex extraction if response isn't clean JSON. Validates at least 4 image prompts.
 
-### Node 9: Generate Images (FLUX)
+### Node 9: Generate Images (ComfyUI SDXL)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `generateImages`
-- **External APIs**: 3-provider fallback (all free, API keys hardcoded in Code node)
-
-**Providers** (tried in order):
-1. **Pollinations.ai** — `GET gen.pollinations.ai/image/{prompt}?model=flux&width=768&height=1344` with `Bearer` secret key header (no rate limits). 45s timeout, 2 attempts.
-2. **Pexels** — Keyword extraction from prompt, `GET api.pexels.com/v1/search?query={keywords}&orientation=portrait`, downloads `src.large2x` (real stock photos). 15s timeout.
-3. **FFmpeg gradient** — local solid-color PNG generation using `0x` hex colors (always works, guaranteed fallback)
+- **External service**: ComfyUI on Windows host via `http://host.docker.internal:8188`
 
 **Logic**:
 1. Takes 8 image prompts from Parse Script JSON
-2. API keys hardcoded in Code node jsCode (n8n sandbox blocks env var access; same approach as Gemini API key in URL)
-3. Writes a helper Node.js script to `/tmp/` (sandbox escape for `https` module access)
-4. Global 780s time budget with per-image budget checks
-5. For each prompt, tries providers in order until one succeeds (skips providers with missing keys)
-6. 3s delay between images
-7. Returns `imageBase64Array`, `providers` array, and `providerSummary` string
+2. Health check: `GET /system_stats` before starting
+3. For each of 8 prompts:
+   - Loads embedded SDXL base 1.0 workflow template (ComfyUI API format)
+   - Injects prompt text and random seed
+   - `POST /prompt` to submit job
+   - Polls `GET /history/{prompt_id}` every 3s until complete (180s timeout)
+   - Downloads output image via `GET /view?filename=...&type=output`
+   - Converts to base64
+4. Sequential processing (8GB VRAM — one image at a time)
+5. Writes helper Node.js script to `/tmp/` (sandbox escape for `http` module access)
 
-**Image specs**: 768x1344 pixels (approximately 9:16), base64-encoded.
+**Image specs**: 768x1344 pixels (9:16), 30 steps, dpmpp_2m sampler, karras scheduler, cfg 7.5. ~35-45s per image.
 
-**Note**: The workflow **never fails** on image generation — at worst it falls back to gradient backgrounds. The code gracefully skips providers with missing keys.
+**Output**: `{ imageBase64Array: [...], imageCount: 8, script, title, description, tags }`
 
-### Node 10: Generate Voiceover (Gemini TTS)
+### Node 10: Animate Images (ComfyUI Hunyuan)
+- **Type**: `n8n-nodes-base.code` (v2)
+- **ID**: `animateImages`
+- **External service**: ComfyUI on Windows host via `http://host.docker.internal:8188`
+
+**Logic**:
+1. Takes 8 base64 images from Generate Images node
+2. For each of 8 images:
+   - Writes image to `/tmp/` as PNG
+   - Uploads via `POST /upload/image` (multipart form)
+   - Loads embedded HunyuanVideo I2V Q4 GGUF workflow template
+   - Injects uploaded filename, cinematic motion prompt, and random seed
+   - `POST /prompt` to submit job
+   - Polls `GET /history/{prompt_id}` every 10s until complete (20 min timeout)
+   - Downloads WEBP output via `GET /view`
+   - Converts WEBP→MP4 via FFmpeg
+   - Converts to base64
+3. Global 9000s time budget (150 min) — if exhausted, remaining images get simple 3s static MP4 fallback
+4. Motion prompts: prepends cinematic descriptions (zoom, pan, dolly, tilt) to original image prompts
+
+**Video specs**: 544x960 pixels, 49 frames at 24fps (~2s clips), 20 steps, CFG 1.0. ~7-12 min per clip.
+
+**Output**: `{ videoClipBase64Array: [...], clipCount: 8, clipDurations: [...], script, title, description, tags }`
+
+### Node 11: Generate Voiceover (Gemini TTS)
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `voiceover`
 - **Auth**: API key in URL query parameter (no n8n credential)
+- **Note**: Receives data from Animate Images node (not Generate Images)
 
 **Parameters**:
 - Method: POST
@@ -228,46 +255,48 @@ Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `fi
 - Voice options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr`
 - Timeout: 30000ms
 
-### Node 11: Compose Video (FFmpeg)
+### Node 12: Compose Video (FFmpeg)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `composeVideo`
 - **Requires**: `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` and FFmpeg installed
 
 **Logic**:
-1. Gets images from `Generate Images (FLUX)` node — `imageBase64Array`
-2. Writes 8 base64 images to `/tmp/n8n_video_*/img_0.png` ... `img_7.png`
-3. Writes base64 PCM audio → converts to WAV via FFmpeg (`-f s16le -ar 24000 -ac 1`)
-4. Probes audio duration to calculate per-image timing
-5. Applies Ken Burns effect: alternating zoom-in/zoom-out on each image
-6. Crossfade transitions (0.5s) between images
-7. Overlays audio track
-8. Output: 1080x1920 vertical MP4 (libx264, CRF 23, AAC audio)
-9. Returns video as n8n binary data
-10. Cleans up temp files
+1. Gets video clips from `Animate Images (ComfyUI Hunyuan)` node — `videoClipBase64Array`
+2. Gets audio from `Generate Voiceover (Gemini TTS)` node — PCM base64
+3. Writes 8 base64 MP4 clips to `/tmp/n8n_video_*/clip_0.mp4` ... `clip_7.mp4`
+4. Writes base64 PCM audio → converts to WAV via FFmpeg (`-f s16le -ar 24000 -ac 1`)
+5. Probes audio duration to calculate speed factor for clip slow-stretching
+6. Slow-stretches each clip with `setpts=PTS/speedFactor` to match audio duration (creates dreamy slow-motion effect)
+7. Scales all clips from 544x960 → 1080x1920
+8. Crossfade transitions (0.3s) between clips
+9. Overlays audio track
+10. Output: 1080x1920 vertical MP4 (libx264, CRF 23, AAC audio)
+11. Returns video as n8n binary data
+12. Cleans up temp files
 
-**Estimated render time**: 30-60 seconds for ~45-sec video at 1080x1920.
+**Estimated render time**: 30-60 seconds for stitching + audio overlay.
 
-### Node 12: Prepare YouTube Metadata
+### Node 13: Prepare YouTube Metadata
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `prepareYT`
 
 Appends `#Shorts` to title, adds hashtags to description, sets category 28 (Science & Technology), truncates title to 100 chars. Passes through binary video data.
 
-### Node 13: Upload to YouTube
+### Node 14: Upload to YouTube
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `youtubeUpload`
 - **Credential**: YouTube OAuth2 API
 
 Resource: `video`, Operation: `upload`. Binary property: `video`. Privacy: `public` (change to `unlisted` for testing). Category: 28. Tags joined with commas, notifySubscribers: true.
 
-### Node 14: Add to Playlist
+### Node 15: Add to Playlist
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `addToPlaylist`
 - **Credential**: YouTube OAuth2 API (same as Upload to YouTube)
 
 Resource: `playlistItem`. `playlistId`: `=YOUR_PLAYLIST_ID` — **SETUP REQUIRED** (use expression format `=PLxxxxxxx` to avoid dropdown loading error). `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`.
 
-### Node 15: Success Output
+### Node 16: Success Output
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `successOutput`
 
@@ -276,22 +305,23 @@ Returns `videoUrl`, `videoId`, `uploadTime`. Constructs YouTube Shorts URL from 
 ## Connection Map
 
 ```
-Source Node                       -> Target Node                       | Type
----------------------------------------------------------------------------------
-Manual Trigger                    -> Fetch Reddit Posts                 | main
-Fetch Reddit Posts                -> Format Reddit Data                 | main
-Format Reddit Data                -> Fetch HN Posts                     | main
-Fetch HN Posts                    -> Pick Best Story                    | main
-Pick Best Story                   -> Prepare Story Data                 | main
-Prepare Story Data                -> Generate Script (Gemini)           | main
-Generate Script (Gemini)          -> Parse Script JSON                  | main
-Parse Script JSON                 -> Generate Images (FLUX)             | main
-Generate Images (FLUX)            -> Generate Voiceover (Gemini TTS)    | main
-Generate Voiceover (Gemini TTS)   -> Compose Video (FFmpeg)             | main
-Compose Video (FFmpeg)            -> Prepare YouTube Metadata            | main
-Prepare YouTube Metadata          -> Upload to YouTube                  | main
-Upload to YouTube                 -> Add to Playlist                    | main
-Add to Playlist                   -> Success Output                     | main
+Source Node                            -> Target Node                            | Type
+------------------------------------------------------------------------------------
+Manual Trigger                         -> Fetch Reddit Posts                      | main
+Fetch Reddit Posts                     -> Format Reddit Data                      | main
+Format Reddit Data                     -> Fetch HN Posts                          | main
+Fetch HN Posts                         -> Pick Best Story                         | main
+Pick Best Story                        -> Prepare Story Data                      | main
+Prepare Story Data                     -> Generate Script (Gemini)                | main
+Generate Script (Gemini)               -> Parse Script JSON                       | main
+Parse Script JSON                      -> Generate Images (ComfyUI SDXL)          | main
+Generate Images (ComfyUI SDXL)         -> Animate Images (ComfyUI Hunyuan)        | main
+Animate Images (ComfyUI Hunyuan)       -> Generate Voiceover (Gemini TTS)         | main
+Generate Voiceover (Gemini TTS)        -> Compose Video (FFmpeg)                  | main
+Compose Video (FFmpeg)                 -> Prepare YouTube Metadata                 | main
+Prepare YouTube Metadata               -> Upload to YouTube                       | main
+Upload to YouTube                      -> Add to Playlist                         | main
+Add to Playlist                        -> Success Output                          | main
 ```
 
 ## Required Credentials
@@ -299,11 +329,10 @@ Add to Playlist                   -> Success Output                     | main
 | # | Credential Name | Type | Where to Get | Used By |
 |---|---|---|---|---|
 | 1 | Google AI Studio (Gemini) | API Key in URL | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Script Gen, Voiceover TTS |
-| 2 | Pollinations.ai | Hardcoded in Code node | [auth.pollinations.ai](https://auth.pollinations.ai/) — free | Generate Images |
-| 3 | Pexels | Hardcoded in Code node | [pexels.com/api](https://www.pexels.com/api/) — free | Generate Images |
-| 4 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
+| 2 | ComfyUI | Local API (no auth) | Local install — see [comfyui/README.md](../comfyui/README.md) | Generate Images, Animate Images |
+| 3 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
 
-**Note**: Image generation API keys are optional — the code gracefully falls back through providers.
+**Note**: ComfyUI runs locally — no API keys needed. SDXL base 1.0 and HunyuanVideo I2V models must be downloaded (~24GB).
 
 ## Troubleshooting
 
@@ -317,17 +346,22 @@ Add to Playlist                   -> Success Output                     | main
 ### Gemini API issues
 - "API key not valid": Verify at [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - 429 Too Many Requests: Free tier rate limit hit — wait a few minutes
-- Gemini 2.5 Flash has 5 RPM on free tier — sufficient for 1 script + 1 voiceover per run
+- Gemini 3 Flash has 5 RPM on free tier — sufficient for 1 script + 1 voiceover per run
 
-### Image generation issues
-- The node has 3-provider fallback (Pollinations → Pexels → FFmpeg gradient) — it should never fully fail
-- All images are gradients: API keys may be missing from the Code node. Open Generate Images (FLUX) and verify the `pollinationsKey` and `pexelsKey` values in the config object
-- Pollinations.ai errors: With secret key, there are no rate limits. The API endpoint is `gen.pollinations.ai/image/` (not the legacy `image.pollinations.ai`)
-- Pexels returns irrelevant photos: The keyword extraction from AI prompts isn't perfect — Pexels is a fallback, not primary
-- If all external providers fail, gradient backgrounds are used (solid-color images)
+### Image generation issues (ComfyUI SDXL)
+- Verify ComfyUI is running: `curl http://localhost:8188/system_stats`
+- "Connection refused": ComfyUI not running or firewall blocking port 8188. Run `comfyui\setup\run_api_server.bat` and check Windows Firewall
+- "Model not found": SDXL base 1.0 model not downloaded. Run `comfyui\setup\install-models.ps1`
+- OOM errors: Close other GPU applications. SDXL base needs ~5-6GB VRAM
 - Images are 768x1344 — FFmpeg upscales to 1080x1920 in the video composition step
-- Task runner timeout set to 900s via `N8N_RUNNERS_TASK_TIMEOUT=900` in docker-compose.yml
-- Global 780s time budget prevents timeout — auto-falls back to faster providers when time is low
+- Task runner timeout set to 9000s (150 min) via `N8N_RUNNERS_TASK_TIMEOUT=9000` in docker-compose.yml (value is in seconds)
+
+### Video animation issues (ComfyUI Hunyuan)
+- Each clip takes ~7-12 minutes — total for 8 clips is ~60-100 minutes. This is normal
+- OOM on HunyuanVideo: Reduce `temporal_size` from 32 to 16 in the workflow template, or reduce frames from 49 to 33
+- WEBP output issues: If FFmpeg can't decode, change `SaveAnimatedWEBP` to `SaveAnimatedPNG` in `comfyui/workflows/hunyuan-i2v-gguf-q4.json`
+- Time budget exceeded: If total exceeds 9000s budget (150 min), remaining clips get static MP4 fallback
+- VRAM: HunyuanVideo I2V needs ~7-8GB VRAM. Cannot run simultaneously with SDXL (ComfyUI auto-swaps models)
 
 ### YouTube upload fails
 - Re-authorize OAuth2 if token expired
@@ -339,16 +373,28 @@ Add to Playlist                   -> Success Output                     | main
 | What | How |
 |---|---|
 | Change news sources | Edit Fetch Reddit Posts URL or Pick Best Story code |
-| Change script length | Edit Generate Script (Gemini) prompt word count target (currently 80-95 words) |
+| Change script length | Edit Generate Script (Gemini) prompt word count target (currently 110-120 words) |
 | Change TTS voice | Edit Generate Voiceover jsonBody `voiceName` field. Options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
 | Change number of images | Edit Generate Script prompt (currently 8 IMAGE_PROMPTS) |
-| Change image providers | Edit Generate Images (FLUX) code — modify provider order or add new providers. API keys are hardcoded in jsCode |
+| Change image model | Edit the FLUX workflow template in `comfyui/workflows/flux-nf4-text-to-image.json` |
+| Change video model | Edit the HunyuanVideo workflow template in `comfyui/workflows/hunyuan-i2v-gguf-q4.json` |
+| Reduce VRAM usage | Lower `temporal_size` (32→16) or frames (49→33) in the HunyuanVideo template |
 | Schedule daily runs | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *`) |
 | Change playlist | Edit Add to Playlist node `playlistId` field |
 | Remove playlist | Delete Add to Playlist node, connect Upload to YouTube → Success Output |
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
+- **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**
+- **v6.8** (2026-03-09): Script stays 110-120 words (~45s narration). `N8N_RUNNERS_TASK_TIMEOUT` 7200→9000 (150 min). animateImages `GLOBAL_BUDGET_MS` 6000000→9000000ms (150 min), exec timeout 6600000→9600000ms (160 min). Runtime: ~80-110 min.
+- **v6.7** (2026-03-09): HunyuanVideo frames 25→49 (2.04s clips). Script 80-95→110-120 words. Word count validation (throws if <90). Poll timeout 1200s→1800s. Fixed successOutput videoId reading `contentDetails.videoId`.
+- **v6.6** (2026-03-09): Fixed minterpolate+xfade — two-pass compose: Pass 1 minterpolate at native 24fps→60fps + setpts + save intermediate; Pass 2 xfade on clean PTS. Compose ~8-12 min.
+- **v6.5** (2026-03-08): Quality pass: generateImages 20→30 steps, dpmpp_2m+karras+cfg7.5. animateImages KSampler 15→20 steps. composeVideo: Lanczos, unsharp, color grade, slow encoder, 192k audio.
+- **v6.4** (2026-03-08): Fixed jittery slow-motion with `minterpolate`. Fixed animated WEBP decode: replaced `SaveAnimatedWEBP` with `SaveImage` (PNG frames), assemble to MP4 at 24fps.
+- **v6.3** (2026-03-08): Fixed `fps=30` must come after `trim+setpts`. Fixed `ffprobe` permissions in Docker — replaced with `ffmpeg -i` + regex.
+- **v6.2** (2026-03-08): Fixed HunyuanVideo I2V 12-node workflow structure. HunyuanImageToVideo is conditioning node — requires separate KSampler. Fixed model paths and param names.
+- **v6.1** (2026-03-07): Replaced FLUX.1 Dev NF4 with SDXL base 1.0. HunyuanVideo 49→25 frames, 20→15 steps. Runtime: 40-60 min.
+- **v6.0** (2026-03-02): Local AI generation via ComfyUI. Replaced cloud image APIs (Pollinations/Pexels/gradient) with FLUX.1 Dev NF4 text-to-image (768x1344, ~60s/image). Added HunyuanVideo I2V Q4 GGUF image-to-video animation (544x960, 49 frames, ~7-12min/clip). Replaced FFmpeg Ken Burns zoom/pan with video clip stitching + slow-stretch effect. New node: Animate Images (ComfyUI Hunyuan). Rewritten nodes: Generate Images (ComfyUI FLUX), Compose Video (FFmpeg). Docker timeout increased to 2 hours. 16 nodes, 15 connections. Runtime: 75-115 min. $0.00/month (fully local).
 - **v5.8** (2026-02-25): Fixed Pollinations.ai URL — migrated from legacy `image.pollinations.ai/prompt/` (down since Feb 13) to new unified `gen.pollinations.ai/image/` endpoint. API keys now hardcoded in Code node (n8n sandbox blocks env var access). Added provider tracking output (`providers`, `providerSummary`). Reduced inter-image delay from 5s to 3s. 15 nodes, 14 connections. $0/month.
 - **v5.7** (2026-02-25): Removed Together.ai (no longer free). Pollinations.ai with secret key is now primary provider, Pexels stock photos fallback, FFmpeg gradient last resort. 3-provider stack. Removed `TOGETHER_API_KEY` env var. 15 nodes, 14 connections. $0/month.
 - **v5.6** (2026-02-25): Overhauled image generation with 4-provider fallback. Added Together.ai, Pollinations.ai secret key, Pexels stock photos, FFmpeg gradient. Global 780s time budget prevents timeout. 15 nodes, 14 connections.

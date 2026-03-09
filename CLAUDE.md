@@ -1,29 +1,31 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # n8n YouTube Shorts Automation
 
 ## Instance Configuration
 - **URL**: http://localhost:5678
 - **Environment**: Local Docker container (shared n8n instance with JobSearchAutomation)
 - **Focus**: Automated YouTube Shorts creation from trending tech news
-- **n8n Workflow ID**: `mlyG42RX4q1yIk8r` (deployed to running instance)
+- **n8n Workflow ID**: `zuFXklAfWmiZqTZh` (deployed to running instance)
 - **Workflow Name**: "YouTube Shorts - Tech News Automation"
 - **GitHub Repo**: https://github.com/skylark248/N8nYtAutomation.git
 
 ## Parent Directory Context
 
-This project lives at `/Users/shivanshchoudhary/Downloads/n8n/YtShortsAutomation/`. The parent `/n8n/` directory contains:
-- `JobSearchAutomation/` -- sibling project (Job Search AI Matching, separate repo)
-- `Dockerfile` -- custom n8n image with FFmpeg baked in (extends `n8nio/n8n:latest`)
-- `docker-compose.yml` -- one-command startup with all env vars and volume mounts
-- n8n runtime data: `database.sqlite`, `binaryData/`, `config`, `.mcp.json`, `crash.journal`
-- The n8n Docker instance mounts the parent `/n8n/` directory as `/home/node/.n8n`
+The n8n Docker instance lives at **`D:\N8n\`** (separate from this repo). That directory contains:
+- `Dockerfile` -- custom n8n image with FFmpeg baked in (extends `docker.n8n.io/n8nio/n8n:latest`)
+- `docker-compose.yml` -- one-command startup with all env vars, volumes, and `extra_hosts` for ComfyUI
+- `start_instructions.txt` -- quick reference for all Docker commands
+- n8n runtime data is stored in a named Docker volume (`n8n_data`)
 - Workflow JSON files are imported via the n8n UI, not read from the filesystem at runtime
-- The root `/n8n/` directory also has copies of the original project files (before folder reorganization) -- these are the originals, the files here in `YtShortsAutomation/` are copies
 
 ## Quick Start
 
 ```bash
-# 1. Start n8n with Docker Compose (from parent /n8n/ directory)
-# Custom Dockerfile bakes in FFmpeg + ffprobe + NODE_FUNCTION_ALLOW_BUILTIN env var
+# 1. Start n8n (run from D:\N8n — the directory containing docker-compose.yml)
+# First time only: docker compose build  (builds custom image with FFmpeg)
 docker compose up -d
 
 # 2. Get a Google AI Studio API key from https://aistudio.google.com/apikeys
@@ -40,27 +42,16 @@ docker compose up -d
 
 ## Docker Setup
 
-The parent `/n8n/` directory contains `Dockerfile` and `docker-compose.yml` that build a custom n8n image with FFmpeg baked in.
-
 **Files** (in parent `/n8n/` directory, NOT in this repo):
 - `Dockerfile` -- extends `n8nio/n8n:latest`, installs `ffmpeg-static` + `@ffprobe-installer/ffprobe` via npm, symlinks to `/usr/local/bin/`
-- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, `N8N_RUNNERS_HEARTBEAT_INTERVAL=300` (prevents FFmpeg render from being killed), image generation API keys (`POLLINATIONS_SECRET_KEY`, `PEXELS_API_KEY`), mounts volume, `restart: unless-stopped`
+- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, `N8N_RUNNERS_TASK_TIMEOUT=9000` (150 min in **seconds** — unit is seconds NOT ms; using ms value overflows 32-bit int and crashes the task runner), `N8N_RUNNERS_HEARTBEAT_INTERVAL=600` (10 min), `extra_hosts: host.docker.internal:host-gateway` (Docker→Windows ComfyUI access), mounts `comfyui/workflows` as read-only volume, `restart: unless-stopped`
 
 **Why custom image**: The official `n8nio/n8n` uses a hardened Alpine image without `apk` package manager. FFmpeg must be installed via npm global packages (`ffmpeg-static`, `@ffprobe-installer/ffprobe`) and symlinked to PATH.
-
-**Rebuild image** (after n8n version updates):
-```bash
-cd /Users/shivanshchoudhary/Downloads/n8n
-docker compose build
-docker compose up -d
-```
 
 ## MCP Server Setup
 
 ### n8n MCP Server (czlonkowski/n8n-mcp)
 Bridges Claude Code with n8n's workflow automation platform. Provides structured access to 1,084+ n8n nodes.
-
-#### Setup Instructions
 
 ```bash
 # Configure MCP server (replace YOUR_N8N_API_KEY with your actual key from n8n Settings -> API)
@@ -74,39 +65,54 @@ claude mcp add n8n-mcp \
   -- npx n8n-mcp
 ```
 
-**Get your API key**: Open n8n -> Settings -> API -> Create API Key
-
-**Verify setup:**
-```bash
-claude mcp list          # Should show n8n-mcp
-claude mcp get n8n-mcp   # Check config
-```
-
 **Important Notes:**
 - MCP tools are injected when a **new conversation begins** -- they don't appear retroactively
 - "Failed to connect" when idle is **normal** -- it only connects during active conversations
-- If tools aren't available after fixing issues, start a **new conversation**
-
-#### Available MCP Tools (39 total)
 
 **Documentation Tools:** `search_nodes`, `get_node`, `validate_node`, `validate_workflow`, `search_templates`, `get_template`, `tools_documentation`
 
 **Workflow Management Tools** (requires API key): `n8n_create_workflow`, `n8n_get_workflow`, `n8n_update_partial_workflow`, `n8n_update_full_workflow`, `n8n_delete_workflow`, `n8n_list_workflows`, `n8n_validate_workflow`, `n8n_autofix_workflow`, `n8n_deploy_template`, `n8n_test_workflow`, `n8n_executions`, `n8n_health_check`
 
-#### MCP Gotchas (Learned from Building This Workflow)
+### MCP Gotchas (Learned from Building This Workflow)
 
 - **`n8n_update_partial_workflow` updateNode operation**: Use `"updates": {...}` key, NOT `"properties": {...}`. The latter causes "Missing required parameter 'updates'" error.
 - **YouTube node `playlistItem` resource**: Set `resource: "playlistItem"` and pass `playlistId` + `videoId`. The videoId comes from the Upload to YouTube response as `uploadId` or `id`. Use expression format `=PLxxxxxxx` for playlistId to avoid dropdown loading error ("[object Object]").
 - **Binary data in Code nodes**: Do NOT use `getBinaryDataBuffer()` -- it loads entire binary into memory and causes OOM crashes. Instead, pass binary metadata through and let HTTP Request nodes handle binary natively.
 - **Gemini API key in URL**: Pass as query param `?key=YOUR_KEY` -- no n8n credential setup needed. Simpler than header auth.
 - **Gemini TTS returns raw PCM**: Not MP3/WAV. Must convert with `ffmpeg -f s16le -ar 24000 -ac 1 -i audio.pcm audio.wav` before use.
+- **Gemini response text location**: `candidates[0].content.parts[0].text` (not OpenAI-style `choices[0].message.content`). Audio/image in `inlineData.data` (base64).
 - **FFmpeg in Code nodes**: Requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` Docker env var. Without it, `require('child_process')` fails.
 - **Code node sandbox escape**: n8n Code nodes don't have `fetch`, `https`, or `curl`. To make HTTP requests, write a `.js` file to `/tmp/` and execute via `exec('node script.js')`. The spawned process runs outside the sandbox with full module access.
-- **Task runner timeout**: Default 300s. For long-running Code nodes (e.g., image generation), set `N8N_RUNNERS_TASK_TIMEOUT=900` in docker-compose.yml.
-- **Background agents**: Bash commands are auto-denied when agents run in background mode. Use the Write tool directly for file operations.
+- **Task runner timeout**: Unit is **seconds** (not ms!). Default 60s. For ComfyUI generation (150 min), set `N8N_RUNNERS_TASK_TIMEOUT=9000` in docker-compose.yml. Setting a millisecond value like `9000000` causes a 32-bit integer overflow inside the task runner, making it crash on every task (symptom: "took too long to acknowledge acceptance of task" loop in logs).
 - **Workflow creation**: Create with all nodes and connections in one `n8n_create_workflow` call for best results, then fix individual nodes with `n8n_update_partial_workflow`.
+- **Reddit 403 Forbidden**: Reddit blocks bot User-Agents. Use `old.reddit.com` + a Chrome browser UA string + `Accept: application/json` header.
+- **Gemini prompt format**: The `combinedPrompt` passed to Gemini for story selection must be raw headlines only — adding format instructions there causes Gemini JSON mode to return the wrong keys (STORY_TITLE/KEY_FACTS instead of SCRIPT/TITLE/IMAGE_PROMPTS).
+- **API keys in Code nodes**: n8n sandbox blocks `process.env` access at runtime. Hardcode image API keys directly in the Code node (same approach as Gemini key in URL parameters).
+- **Background agents**: Bash commands are auto-denied when agents run in background mode. Use the Write tool directly for file operations.
+- **ComfyUI from Docker**: n8n Docker container reaches ComfyUI on Windows host via `http://host.docker.internal:8188`. Requires `extra_hosts: ["host.docker.internal:host-gateway"]` in docker-compose.yml and Windows Firewall rule for port 8188.
+- **ComfyUI embedded Python**: ComfyUI uses its own Python at `C:\ComfyUI\python_embeded\python.exe` (Python 3.13). The `python` command in bash resolves to the Microsoft Store stub and fails. Always use the full path: `/c/ComfyUI/python_embeded/python.exe script.py`
+- **ComfyUI NF4 vec_in_dim bug**: FLUX NF4 models cause `mat1 and mat2 shapes cannot be multiplied (1x1 and 768x3072)` in KSampler. Root cause: NF4 packs weights as `(out*in//2, 1)` uint8, so `model_detection.py` reads `shape[1]=1` as `vec_in_dim`. Fix applied to `C:\ComfyUI\ComfyUI\comfy\model_detection.py` lines 240-255 — detects uint8+shape[1]==1 and recovers actual dim from bias: `(w.shape[0] * 2) // bias.shape[0]`. See `comfyui-nf4-debugging` skill for full details.
+- **ComfyUI pyc cache**: Python `.pyc` bytecode can be stale even when source is fixed (same-second mtime fools the check). After patching source: delete the `.pyc`, recompile with embedded Python, restart ComfyUI. Verify fix is in pyc with `marshal` check — search for a unique string from new code (comments are NOT stored in bytecode).
+- **ComfyUI image upload**: To use an image in HunyuanVideo I2V, first upload it via `POST /upload/image` (multipart form), then reference the returned filename in the LoadImage node. The filename is returned in the JSON response.
+- **ComfyUI polling**: After `POST /prompt`, poll `GET /history/{prompt_id}` until the prompt_id appears in the response. Output images/videos are in the `outputs` object with filenames to fetch via `GET /view?filename=...&subfolder=...&type=output`.
+- **HunyuanImageToVideo is a conditioning node, NOT a sampler**: Outputs `[0]=CONDITIONING, [1]=LATENT`. It does NOT denoise — a separate KSampler node is required after it. Common mistake: connecting HunyuanImageToVideo output directly to VAEDecodeTiled causes `return_type_mismatch: received_type(CONDITIONING) mismatch input_type(LATENT)`.
+- **HunyuanImageToVideo input names**: Use `length` (not `num_frames`) for frame count, `start_image` (not `image`) for the input image, `guidance_type: "v2 (replace)"` (with spaces, not `"v2(replace)"`). Input `positive` takes CONDITIONING from TextEncodeHunyuanVideo_ImageToVideo.
+- **HunyuanVideo model file paths**: CLIP/text encoder at `split_files\\text_encoder\\llava_llama3_fp8_scaled.safetensors`, CLIPVision at `split_files\\clip_vision\\llava_llama3_vision.safetensors`, VAE at `split_files\\vae\\hunyuan_video_vae_bf16.safetensors`. These are subdirectory paths relative to their model folder — the flat filenames will fail with "not in list" errors.
+- **CLIPVisionEncode required param**: Must include `crop: "center"` — omitting it causes a "Required input missing: crop" 400 error.
+- **TextEncodeHunyuanVideo_ImageToVideo required param**: Must include `image_interleave: 2` (default value) — omitting it causes "Required input missing: image_interleave".
+- **HunyuanVideo KSampler seed**: Set seed on the KSampler node (node `'10'` in the 12-node workflow), not on HunyuanImageToVideo.
+- **SaveAnimatedWEBP output key**: Uses `"gifs"` key in history API response (not `"images"`). Use `node12.gifs || node12.images || []` for compatibility.
+- **HunyuanVideo output node**: In the 12-node workflow, output is on node `'12'` (SaveAnimatedWEBP), not `'10'`.
+- **Animated WEBP viewing**: Windows Photo Viewer shows animated WEBP as static. Open in Chrome/Edge/Firefox to verify animation is working.
+- **`n8n_update_partial_workflow` updateNode node identification**: Use `nodeId` field (the node's programmatic ID like `"animateImages"`), not `id` or `name`. Using `name` with special characters fails with "Node not found".
+- **Animated WEBP not decodable by static FFmpeg build**: `ffmpeg-static` (johnvansickle) skips `ANIM`/`ANMF` chunks — output from `SaveAnimatedWEBP` cannot be decoded. Fix: replace `SaveAnimatedWEBP` with `SaveImage` in the ComfyUI workflow. `SaveImage` outputs individual PNG frames; download all frames in n8n and assemble to MP4 with `ffmpeg -r 24 -i frame_%05d.png`. Duration = `frames.length / 24`.
+- **FFmpeg xfade requires constant frame rate**: `fps=30` MUST come AFTER `trim+setpts` in the filter chain. Wrong: `scale,crop,fps=30,trim=duration=X,setpts=PTS-STARTPTS` → xfade error "current rate of 1/0 is invalid". Correct: `scale,crop,trim=duration=X,setpts=PTS-STARTPTS,fps=30`.
+- **`ffprobe` permission denied in Docker**: `@ffprobe-installer/ffprobe` binary installs as `-rwxr--r--` (owner-execute only). The `node` user gets "Permission denied" at runtime. Fix in code: use `ffmpeg -i file 2>&1 || true` and parse `Duration: H:M:S` with regex. Fix in Dockerfile: add `chmod a+x $(node -p "require('@ffprobe-installer/ffprobe').path")` before the symlink (requires `docker compose build` rebuild).
+- **`docker exec` path conversion in git bash (Windows)**: MSYS automatically converts Unix paths like `/tmp/` to Windows paths (`C:/Users/.../Temp/`), breaking docker exec commands. Prefix with `MSYS_NO_PATHCONV=1`: `MSYS_NO_PATHCONV=1 docker exec container bash -c "..."`.
+- **SDXL quality settings**: For best image quality on 8GB VRAM — use `dpmpp_2m` sampler + `karras` scheduler + 30 steps + cfg 7.5. Significantly sharper than default `euler` + `normal` + 20 steps. Each image takes ~35-45s vs ~25-30s.
+- **minterpolate is slow**: `minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1` generates true motion-estimated frames but takes ~5-10 min for 8 clips. Raise FFmpeg timeout to 600s in the Code node. Worth it — eliminates the jittery frame-duplication look from slow-motion stretching.
 
-#### Troubleshooting
+### MCP Troubleshooting
 
 **npm cache permission errors:**
 ```bash
@@ -125,7 +131,6 @@ claude mcp remove n8n-mcp -s local
 ### n8n Skills (czlonkowski/n8n-skills)
 Expert guidance for building production-ready n8n workflows. Skills activate automatically based on context.
 
-**Available Skills:**
 1. **Expression Syntax** (`n8n-expression-syntax`) - Correct expression patterns and variable access
 2. **MCP Tools Expert** (`n8n-mcp-tools-expert`) - Proper use of n8n-mcp server tools
 3. **Workflow Patterns** (`n8n-workflow-patterns`) - 5 proven architectural approaches
@@ -134,147 +139,74 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 6. **Code JavaScript** (`n8n-code-javascript`) - JavaScript implementation in Code nodes
 7. **Code Python** (`n8n-code-python`) - Python limitations and standard library usage
 
+### ComfyUI Skills (custom)
+Debugging guidance for ComfyUI local AI generation issues.
+
+1. **NF4 Debugging** (`comfyui-nf4-debugging`) - Diagnose and fix NF4 quantized model errors (shape mismatches, pyc cache, model detection). Activates on `mat1 and mat2 shapes`, KSampler errors, or model_detection.py issues.
+2. **HunyuanVideo I2V** (`comfyui-hunyuan-i2v`) - Build and debug HunyuanVideo Image-to-Video workflows. Covers correct 12-node structure, required params, model file paths, and all error fixes. Activates on HunyuanImageToVideo, animateImages, or I2V workflow issues.
+
+### ComfyUI MCP Server (custom, created 2026-03-08)
+Direct ComfyUI API access from Claude Code. Location: `C:\Users\rstar\.claude\comfyui-mcp\`
+
+**Setup** (run once):
+```bash
+cd C:\Users\rstar\.claude\comfyui-mcp && npm install
+claude mcp add comfyui-mcp \
+  -e COMFYUI_URL=http://localhost:8188 \
+  -s local \
+  -- node C:\Users\rstar\.claude\comfyui-mcp\index.js
+```
+
+**Tools**: `comfyui_health`, `comfyui_submit_workflow`, `comfyui_poll_result`, `comfyui_upload_image`, `comfyui_free_memory`, `comfyui_get_node_info`, `comfyui_queue_status`
+
 ## Active Workflows
 
 ### YouTube Shorts - Tech News Automation
 - **Status**: Inactive (manual trigger)
-- **n8n Workflow ID**: `mlyG42RX4q1yIk8r`
-- **Nodes**: 15 | **Connections**: 14
-- **Estimated Runtime**: 3-5 minutes per video
+- **n8n Workflow ID**: `zuFXklAfWmiZqTZh`
+- **Nodes**: 16 | **Connections**: 15
+- **Estimated Runtime**: 80-110 minutes per video (local AI generation) | **Monthly Cost**: $0.00
 - **Export File**: `exports/youtube-shorts-tech-news.json`
-- **Documentation**: See `docs/workflow-reference.md` for full node-by-node breakdown
-- **Setup Guide**: See `docs/setup-guide.md` for credential configuration
+- **Documentation**: `docs/workflow-reference.md` (full node-by-node breakdown)
+- **Setup Guide**: `docs/setup-guide.md` (credential configuration)
 
-**Pipeline**: Fetch news (Reddit + HN) -> Generate script (Gemini 2.5 Flash) -> Create images (Pollinations.ai FLUX / Pexels / gradient fallback) -> Voiceover (Gemini 2.5 Flash TTS) -> Compose video (FFmpeg Ken Burns) -> Upload to YouTube (public) -> Add to playlist
+**Pipeline**: Fetch news (Reddit + HN) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base) → Animate images (ComfyUI HunyuanVideo I2V 49 frames) → Voiceover (Gemini 2.5 Flash TTS Preview) → Compose video (FFmpeg stitch + audio) → Upload to YouTube (public) → Add to playlist
 
 **Required Credentials** (configure in n8n before running):
-1. **Google AI Studio API Key** - for Gemini script generation and Gemini TTS voiceover (passed in URL query params, no n8n credential needed)
-2. **YouTube OAuth2** - for uploading videos and adding to playlist. Enable YouTube Data API v3 in Google Cloud Console. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
+1. **Google AI Studio API Key** - Gemini script + TTS (passed in URL query params, no n8n credential needed)
+2. **YouTube OAuth2** - upload + playlist. Enable YouTube Data API v3. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
 
-**Image Generation API Keys** (set as env vars in docker-compose.yml or `.env` file):
-1. **Pollinations.ai** (primary) - sign up at https://auth.pollinations.ai/ for unlimited secret key. Set `POLLINATIONS_SECRET_KEY`
-2. **Pexels** (fallback) - sign up at https://www.pexels.com/api/ for stock photos. Set `PEXELS_API_KEY`
-- Keys are optional — the code gracefully skips providers with missing keys and falls back to the next one
+**Local AI Requirements**:
+- **ComfyUI** running on Windows host at `http://host.docker.internal:8188` with SDXL base + HunyuanVideo I2V models (~24GB)
+- **NVIDIA GPU** with 8GB+ VRAM (RTX 3070 Ti or similar)
+- **SDXL model**: `sd_xl_base_1.0.safetensors` (~6.5GB) in `C:\ComfyUI\ComfyUI\models\checkpoints\`
+- **HunyuanVideo GGUF**: `hunyuan-video-i2v-720p-Q4_K_M.gguf` in `models\unet\`
+- **HunyuanVideo text encoder**: `models\clip\split_files\text_encoder\llava_llama3_fp8_scaled.safetensors` (~5GB)
+- **HunyuanVideo CLIP vision**: `models\clip_vision\split_files\clip_vision\llava_llama3_vision.safetensors` (~1.2GB)
+- **HunyuanVideo VAE**: `models\vae\split_files\vae\hunyuan_video_vae_bf16.safetensors` (~222MB)
+- **CLIP-L** (shared): `models\clip\clip_l.safetensors` (~235MB)
+- See `comfyui/README.md` for full setup instructions
 
-**Required Docker Setup** (handled automatically by `docker compose up -d`):
-- Custom Dockerfile with FFmpeg + ffprobe baked in (installed via `npm -g ffmpeg-static @ffprobe-installer/ffprobe`)
-- `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var (set in docker-compose.yml)
-- `restart: unless-stopped` policy (auto-starts with Docker Desktop)
+### Node List (16 nodes)
 
-**Monthly Cost**: $0.00 (all free APIs + local FFmpeg)
-
-### Complete Node List (15 nodes)
-
-| # | Node Name | Type | Version | ID | Purpose |
-|---|---|---|---|---|---|
-| 1 | Manual Trigger | `n8n-nodes-base.manualTrigger` | v1 | `trigger` | Click to run |
-| 2 | Fetch Reddit Posts | `n8n-nodes-base.httpRequest` | v4.2 | `fetchReddit` | GET old.reddit.com/r/technology/hot.json?limit=15 |
-| 3 | Format Reddit Data | `n8n-nodes-base.code` | v2 | `formatReddit` | Extract top 10 non-stickied posts with scores |
-| 4 | Fetch HN Posts | `n8n-nodes-base.httpRequest` | v4.2 | `fetchHN` | GET hn.algolia.com/api/v1/search?tags=front_page |
-| 5 | Pick Best Story | `n8n-nodes-base.code` | v2 | `pickStory` | Combine Reddit + HN data into selection prompt |
-| 6 | Prepare Story Data | `n8n-nodes-base.code` | v2 | `parseAgent` | Format combined prompt with timestamp |
-| 7 | Generate Script (Gemini) | `n8n-nodes-base.httpRequest` | v4.2 | `scriptGen` | Gemini 2.5 Flash: script, title, tags, 8 image prompts. Auto-retry: 3 attempts, 5s delay |
-| 8 | Parse Script JSON | `n8n-nodes-base.code` | v2 | `parseScript` | Parse Gemini JSON with fallback regex extraction |
-| 9 | Generate Images (FLUX) | `n8n-nodes-base.code` | v2 | `generateImages` | Triple-provider: Pollinations / HF FLUX.1 / gradient fallback |
-| 10 | Generate Voiceover (Gemini TTS) | `n8n-nodes-base.httpRequest` | v4.2 | `voiceover` | Gemini 2.5 Flash TTS: voice Kore, PCM base64 output |
-| 11 | Compose Video (FFmpeg) | `n8n-nodes-base.code` | v2 | `composeVideo` | Ken Burns zoom/pan + crossfade + audio, outputs MP4 |
-| 12 | Prepare YouTube Metadata | `n8n-nodes-base.code` | v2 | `prepareYT` | Append #Shorts, set category 28, format tags |
-| 13 | Upload to YouTube | `n8n-nodes-base.youTube` | v1 | `youtubeUpload` | Upload video binary, privacy: public |
-| 14 | Add to Playlist | `n8n-nodes-base.youTube` | v1 | `addToPlaylist` | Add video to YouTube playlist |
-| 15 | Success Output | `n8n-nodes-base.code` | v2 | `successOutput` | Return videoUrl, videoId, uploadTime |
-
-### Connection Map
-
-```
-Manual Trigger               -> Fetch Reddit Posts            (main)
-Fetch Reddit Posts           -> Format Reddit Data            (main)
-Format Reddit Data           -> Fetch HN Posts                (main)
-Fetch HN Posts               -> Pick Best Story               (main)
-Pick Best Story              -> Prepare Story Data            (main)
-Prepare Story Data           -> Generate Script (Gemini)      (main)
-Generate Script (Gemini)     -> Parse Script JSON             (main)
-Parse Script JSON            -> Generate Images (FLUX)        (main)
-Generate Images (FLUX)       -> Generate Voiceover (Gemini TTS) (main)
-Generate Voiceover (Gemini TTS) -> Compose Video (FFmpeg)     (main)
-Compose Video (FFmpeg)       -> Prepare YouTube Metadata      (main)
-Prepare YouTube Metadata     -> Upload to YouTube             (main)
-Upload to YouTube            -> Add to Playlist               (main)
-Add to Playlist              -> Success Output                (main)
-```
-
-### Key Node Implementation Details
-
-**Fetch Reddit Posts** (HTTP Request):
-- URL: `https://old.reddit.com/r/technology/hot.json?limit=15`
-- Headers: `User-Agent: Mozilla/5.0 (Chrome browser UA)`, `Accept: application/json` (Reddit blocks bot UAs with 403)
-- Timeout: 10000ms
-
-**Format Reddit Data** (Code node):
-- Filters out stickied posts
-- Takes top 10, formats as `"1. [Score: X] Title (Y comments)"`
-
-**Pick Best Story** (Code node):
-- Combines Reddit summary + HN summary into `combinedPrompt` (raw headlines only, no format instructions)
-- References Format Reddit Data via `$('Format Reddit Data').first().json.redditSummary`
-
-**Generate Script (Gemini)** (HTTP Request):
-- POST `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=API_KEY`
-- System instruction enforces output format: "ALWAYS respond with a JSON object containing these exact keys: SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS"
-- User prompt: pick best story + write script in one step (no conflicting format instructions)
-- `responseMimeType: 'application/json'` for structured output
-- Requests: SCRIPT (80-95 words), TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
-- Auto-retry: `retryOnFail: true, maxTries: 3, waitBetweenTries: 5000` (handles transient 503 errors)
-
-**Parse Script JSON** (Code node):
-- Reads from `$input.first().json.candidates[0].content.parts[0].text` (Gemini format)
-- Primary: `JSON.parse(response)`
-- Fallback: regex `/\{[\s\S]*\}/` to extract JSON from markdown code blocks
-- Uses `findScriptData()` to recursively search for SCRIPT field up to 2 levels deep
-- Handles flat `{SCRIPT, ...}`, wrapped `{YOUTUBE_SHORT: {SCRIPT, ...}}`, and nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}` formats
-- Detects wrong format (STORY_TITLE/KEY_FACTS) and throws clear error
-- Normalizes both UPPER and lowercase keys (SCRIPT/script, IMAGE_PROMPTS/image_prompts)
-- Validates required fields: SCRIPT, TITLE, IMAGE_PROMPTS array (minimum 4)
-
-**Generate Images (FLUX)** (Code node):
-- 3-provider fallback: Pollinations.ai → Pexels stock photos → FFmpeg gradient
-- Writes helper Node.js script to `/tmp/` to escape n8n sandbox (needs `https` module)
-- Pollinations.ai: `GET gen.pollinations.ai/image/{prompt}?model=flux&width=768&height=1344` with `Bearer` secret key header (no rate limits, ~10-20s per image)
-- Pexels: keyword search `GET api.pexels.com/v1/search?query={keywords}&orientation=portrait`, downloads `src.large2x` (real photos)
-- FFmpeg gradient: local `ffmpeg -f lavfi -i color=c=0xHEX:s=768x1344 -frames:v 1` (always works)
-- API keys hardcoded in Code node (same approach as Gemini API key in URL parameters)
-- Global 780s time budget with per-image budget checks (auto-falls back to Pexels/gradient when low)
-- Between-image delay: 3s
-- Outputs: `{ imageBase64Array: [...], imageCount: 8, providers: [...], providerSummary: "..." }`
-
-**Generate Voiceover (Gemini TTS)** (HTTP Request):
-- POST `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=API_KEY`
-- Body: `{ contents: [{ parts: [{ text: script }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } } }`
-- Returns base64 PCM audio (24kHz, 16-bit, mono) in `candidates[0].content.parts[0].inlineData.data`
-- Voice options: Kore, Charon, Fenrir, Aoede, Leda, Orus, Puck, Zephyr (and more)
-
-**Compose Video (FFmpeg)** (Code node):
-- Requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` and `ffmpeg` installed
-- Writes 8 base64 images to `/tmp/` as PNG files
-- Converts PCM audio to WAV via FFmpeg
-- Applies Ken Burns effect: alternating zoom-in/zoom-out on each image (~5.6s per image)
-- Crossfade transitions (0.5s) between images using xfade filter
-- Overlays audio track, outputs 1080x1920 vertical MP4
-- Returns video as n8n binary data
-- Estimated render time: 30-60s on M1, 15-30s on modern x86
-
-**Upload to YouTube** (YouTube node):
-- Resource: `video`, Operation: `upload`
-- Binary property: `video`
-- Privacy: `public` (change to `unlisted` for testing)
-- Category: 28 (Science & Technology)
-- Tags joined with commas, notifySubscribers: true
-
-**Add to Playlist** (YouTube node):
-- Resource: `playlistItem`, Operation: default (add)
-- `playlistId`: `=PLgSHSf2lAXvSpfXhIHGxiy3zEg23QjCGc` (expression format avoids dropdown loading error)
-- `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`
-- Uses same YouTube OAuth2 credential as Upload
-- **Note**: The `=` prefix makes it an expression so n8n doesn't try to load playlist options via API (which causes "[object Object]" UI error)
+| # | Node Name | Type | ID | Purpose |
+|---|---|---|---|---|
+| 1 | Manual Trigger | manualTrigger | `trigger` | Click to run |
+| 2 | Fetch Reddit Posts | httpRequest | `fetchReddit` | GET old.reddit.com/r/technology/hot.json?limit=15 |
+| 3 | Format Reddit Data | code | `formatReddit` | Extract top 10 non-stickied posts |
+| 4 | Fetch HN Posts | httpRequest | `fetchHN` | GET hn.algolia.com/api/v1/search?tags=front_page |
+| 5 | Pick Best Story | code | `pickStory` | Combine Reddit + HN into selection prompt |
+| 6 | Prepare Story Data | code | `parseAgent` | Format combined prompt with timestamp |
+| 7 | Generate Script (Gemini) | httpRequest | `scriptGen` | Gemini 3 Flash (`gemini-3-flash-preview`): script, title, tags, 8 image prompts |
+| 8 | Parse Script JSON | code | `parseScript` | Parse Gemini JSON, recursive findScriptData() fallback |
+| 9 | Generate Images (ComfyUI SDXL) | code | `generateImages` | SDXL base via ComfyUI API, 8x images (768x1344), ~30s each |
+| 10 | Animate Images (ComfyUI Hunyuan) | code | `animateImages` | HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960, 25 frames) |
+| 11 | Generate Voiceover (Gemini TTS) | httpRequest | `voiceover` | Gemini 3 Flash TTS, voice Kore, PCM base64 |
+| 12 | Compose Video (FFmpeg) | code | `composeVideo` | Stitch clips + slow-stretch + crossfade + audio, 1080x1920 MP4 |
+| 13 | Prepare YouTube Metadata | code | `prepareYT` | Append #Shorts, category 28, format tags |
+| 14 | Upload to YouTube | youTube | `youtubeUpload` | Upload video binary, privacy: public |
+| 15 | Add to Playlist | youTube | `addToPlaylist` | Add video to YouTube playlist |
+| 16 | Success Output | code | `successOutput` | Return videoUrl, videoId, uploadTime |
 
 ### Placeholder Values to Configure
 
@@ -287,43 +219,36 @@ Add to Playlist              -> Success Output                (main)
 
 ```
 .
-├── README.md                 # Start here -- project overview & quickstart
+├── README.md                 # Project overview & quickstart
 ├── CLAUDE.md                 # Claude Code instructions (this file)
 ├── .env.example              # Template for secrets (copy to .env)
-├── .gitignore                # Excludes sensitive files from git
-├── .gitmodules               # Git submodule references (n8n-mcp, n8n-skills)
-│
-├── docs/                     # All documentation
+├── comfyui/                  # Local AI generation setup
+│   ├── README.md             # ComfyUI setup guide (models, VRAM, troubleshooting)
+│   ├── workflows/            # ComfyUI API-format workflow templates
+│   │   ├── sdxl-text-to-image.json        # SDXL base 1.0 (768x1344) — reference only; n8n uses 30 steps, dpmpp_2m/karras, cfg=7.5
+│   │   ├── flux-nf4-text-to-image.json    # FLUX.1 Dev NF4 (768x1344) — unused, kept for reference
+│   │   └── hunyuan-i2v-gguf-q4.json       # HunyuanVideo I2V (544x960, 49 frames)
+│   └── setup/                # Installation scripts
+│       ├── install-models.ps1        # Download ~24GB of models
+│       ├── install-custom-nodes.ps1  # Clone GGUF custom node (HunyuanVideo)
+│       └── run_api_server.bat        # Launch ComfyUI API server
+├── docs/
 │   ├── setup-guide.md        # Step-by-step credential setup
-│   └── workflow-reference.md # Complete 15-node workflow documentation
-│
-├── exports/                  # Importable workflow JSON files
-│   ├── youtube-shorts-tech-news.json          # Clean export (no credentials)
-│   └── youtube-shorts-tech-news-with-creds.json  # With creds (gitignored)
-│
-├── n8n-mcp/                  # MCP server (git submodule: github.com/czlonkowski/n8n-mcp)
-└── n8n-skills/               # Claude skills (git submodule: github.com/czlonkowski/n8n-skills)
+│   └── workflow-reference.md # Complete 16-node workflow documentation + version history
+├── exports/
+│   └── youtube-shorts-tech-news.json  # Clean export (no credentials)
+├── n8n-mcp/                  # MCP server (git submodule)
+└── n8n-skills/               # Claude skills (git submodule)
 ```
 
 ## Workflow Development Guidelines
 
 ### Best Practices
-1. Use descriptive names for workflows and nodes
-2. Add notes to complex logic for maintainability
-3. Handle errors gracefully with Error Trigger nodes
-4. Test workflows with sample data before activating
-5. Never commit API keys or credentials -- use `.env` + `.gitignore`
-6. Always validate workflows after creation with `n8n_validate_workflow`
-7. Use `n8n_autofix_workflow` to fix expression format and version issues
-8. When updating nodes via MCP, use `n8n_update_partial_workflow` with `updateNode` operation and `"updates": {...}` key
-9. Export clean workflow JSON by fetching via `n8n_get_workflow` and stripping credentials/metadata
-10. For binary-heavy workflows, keep Code nodes lightweight -- let HTTP Request nodes handle binary natively
-
-### Common Automation Patterns
-- **Scheduled tasks**: Use Cron/Schedule triggers
-- **AI Agent pipelines**: Use AI Agent node + tools for research/content generation
-- **Content creation**: Fetch data -> AI Script Gen -> Media Gen -> Compose -> Publish
-- **Binary data pipeline**: Generate binary (TTS/images) -> Upload to temp host -> Pass URLs to renderer
+- Always validate workflows after creation with `n8n_validate_workflow`
+- Use `n8n_autofix_workflow` to fix expression format and version issues
+- When updating nodes via MCP, use `n8n_update_partial_workflow` with `updateNode` operation and `"updates": {...}` key
+- Export clean workflow JSON by fetching via `n8n_get_workflow` and stripping credentials/metadata
+- For binary-heavy workflows, keep Code nodes lightweight -- let HTTP Request nodes handle binary natively
 
 ### n8n Expression Syntax Quick Reference
 - Reference current item: `{{ $json.fieldName }}`
@@ -333,86 +258,39 @@ Add to Playlist              -> Success Output                (main)
 - n8n expressions start with `=` when used in node parameters: `={{ $json.field }}`
 - JSON stringify in expressions: `={{ JSON.stringify({ key: $json.value }) }}`
 
-## Cost Estimate
+## Version History (recent — see docs/workflow-reference.md for full history)
 
-| Service | Per Video | Monthly (30 videos) |
-|---|---|---|
-| Gemini 2.5 Flash (script) | $0.00 | $0.00 (free tier) |
-| Pollinations.ai / FLUX.1 (8 images) | $0.00 | $0.00 (free, no API key) |
-| Gemini 2.5 Flash TTS (voiceover) | $0.00 | $0.00 (free tier) |
-| FFmpeg (video render) | $0.00 | $0.00 (local) |
-| YouTube API | $0.00 | $0.00 |
-| **Total** | **$0.00** | **$0.00** |
-
-**Free tier limits** (Google AI Studio):
-- Gemini 2.5 Flash: 5 RPM (sufficient for 1 script per run)
-- Gemini 2.5 Flash TTS: Free tier available
-- Image generation: Pollinations.ai is free with no rate limits when using secret key (unlimited requests)
-- For 1 video/day: uses ~1 script + 1 TTS call = well within limits
-
-## Version History
-
-- **v5.8** (2026-02-25): Fixed Pollinations.ai URL — migrated from legacy `image.pollinations.ai/prompt/` (down since Feb 13) to new unified `gen.pollinations.ai/image/` endpoint. API keys now hardcoded in Code node (n8n sandbox blocks env var access). Added provider tracking output (`providers`, `providerSummary`). Reduced inter-image delay from 5s to 3s. 15 nodes, 14 connections. $0/month.
-- **v5.7** (2026-02-25): Removed Together.ai (no longer free). Pollinations.ai with secret key is now primary provider, Pexels stock photos fallback, FFmpeg gradient last resort. 3-provider stack. Removed `TOGETHER_API_KEY` env var. 15 nodes, 14 connections. $0/month.
-- **v5.6** (2026-02-25): Overhauled image generation with 4-provider fallback. Added Together.ai, Pollinations.ai secret key, Pexels stock photos, FFmpeg gradient. Global 780s time budget prevents timeout. 15 nodes, 14 connections.
-- **v5.5** (2026-02-24): Fixed Gemini returning story analysis format (STORY_TITLE/KEY_FACTS) instead of script format (SCRIPT/TITLE/IMAGE_PROMPTS). Root cause: Pick Best Story's `combinedPrompt` included conflicting format instructions that confused Gemini's JSON mode. Fix: removed format instructions from `combinedPrompt` (raw headlines only), rewrote Generate Script prompt as single-step instruction, added system instruction enforcing exact output keys. Parse Script JSON now detects wrong format and throws clear error. 15 nodes, 14 connections.
-- **v5.4** (2026-02-24): Fixed Pollinations.ai rate limiting causing 6/8 images to fall back to gradient. Increased between-image delay from 3s to 10s. Increased retries from 2 to 3 per provider with exponential backoff (15s/30s for Pollinations, 20s/40s for HuggingFace). Added `N8N_RUNNERS_HEARTBEAT_INTERVAL=300` to docker-compose.yml to prevent FFmpeg render from being killed as "unresponsive". 15 nodes, 14 connections.
-- **v5.3** (2026-02-24): Fixed FFmpeg gradient fallback syntax error (unescaped double quotes in color filter causing `Unexpected identifier 'color'`). Switched hex colors from `#` to `0x` format. Added auto-retry to Generate Script node (3 attempts, 5s delay) for transient Gemini 503 errors. 15 nodes, 14 connections.
-- **v5.2** (2026-02-23): Robust Parse Script JSON -- `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
-- **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code. Updated all documentation.
-- **v5.0** (2026-02-23): Switched image generation from Gemini (0 free quota) to HuggingFace Spaces FLUX.1 (free, no API key). Switched script generation from Gemini 2.0 Flash to Gemini 2.5 Flash (5 RPM). Merged Split Image Prompts + Generate Images + Collect All Images into single Code node. 15 nodes, 14 connections. $0.00/video.
-- **v4.0** (2026-02-16): Migrated to completely free stack. Replaced OpenAI GPT-5 -> Gemini 2.0 Flash, DALL-E 3 -> Gemini 2.5 Flash Image, OpenAI TTS -> Gemini 2.5 Flash TTS, Creatomate -> FFmpeg Ken Burns. Increased to 8 images for ~45s video. Removed 8 nodes (Creatomate pipeline), added 1 (FFmpeg compose). 17 nodes, 16 connections. $0/month.
-- **v3.1** (2026-02-09): Added Add to Playlist node -- videos automatically added to YouTube playlist after upload. 24 nodes, 23 connections.
-- **v3.0** (2026-02-09): Audio upload via tmpfiles.org (Creatomate requires real URLs, not data URIs). Split video data prep into 3 lightweight nodes to avoid OOM. Privacy set to public. 23 nodes, 22 connections.
-- **v2.0** (2026-02-08): Replaced AI Agent with direct HTTP fetches. DALL-E via HTTP Request for URL output. Added render validation. 21 nodes.
-- **v1.0** (2026-02-07): Initial creation. 18 nodes, manual trigger, Creatomate free tier.
-
-## Development History
-
-This workflow evolved over multiple iterations (v1.0 -> v5.2):
-
-**v1.0 (Day 1)**: Initial 18-node workflow with AI Agent for news research. Failed because AI Agent was unreliable for structured output.
-
-**v2.0 (Day 2)**: Replaced AI Agent with direct HTTP requests to Reddit and Hacker News APIs. Switched DALL-E from binary output to URL output. Added Creatomate render validation (status check + error handling). 21 nodes.
-
-**v3.0-3.1 (Day 3)**: Fixed OOM crashes, added tmpfiles.org upload for Creatomate audio, added playlist management. 24 nodes.
-
-**v4.0 (Day 10)**: Complete migration to free APIs. Single Google AI Studio API key replaces all paid services. FFmpeg Ken Burns effect replaces Creatomate for local video composition. 8 images instead of 4 for full 45-second coverage. Docker requires `NODE_FUNCTION_ALLOW_BUILTIN` env var and `ffmpeg` installed. 17 nodes.
-
-**v5.0-5.2 (Day 17)**: Gemini image generation quota dropped to 0. Switched to free external image APIs: Pollinations.ai (primary), HuggingFace Spaces FLUX.1 (fallback), FFmpeg gradient (guaranteed fallback). Merged Split/Generate/Collect image nodes into single Code node with sandbox escape pattern. Updated script generation from Gemini 2.0 Flash to 2.5 Flash. Added robust Parse Script JSON with `findScriptData()` to handle Gemini's variable response nesting. 15 nodes.
-
-Key issues encountered and resolved:
-- **FFmpeg gradient syntax error**: Unescaped double quotes in `"color=c=#hex..."` inside double-quoted JS string broke the string literal. Fixed by using `0x` hex format and removing all quotes from the ffmpeg command.
-- **Gemini 503 transient errors**: Gemini API occasionally returns 503 "Service unavailable". Fixed by enabling auto-retry on the Generate Script node (3 attempts, 5s delay).
-- **YouTube OAuth token expiry**: Refresh tokens expire after 7 days when the Google Cloud app is in "Testing" mode. Fixed by re-authorizing. Prevention: publish the app in Google Cloud Console.
-- **Reddit 403 Forbidden**: Reddit blocks bot-like User-Agent strings. Fixed by using `old.reddit.com` + Chrome browser UA + `Accept: application/json`.
-- **n8n OOM crashes**: Caused by `getBinaryDataBuffer()` in Code nodes. Fixed by keeping Code nodes lightweight.
-- **Gemini response format**: Different from OpenAI. Text in `candidates[0].content.parts[0].text`, images/audio in `inlineData.data` (base64).
-- **Gemini TTS audio format**: Returns raw PCM (24kHz, 16-bit, mono). Must convert to WAV via FFmpeg before use.
-- **FFmpeg in n8n**: Requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var and FFmpeg installed. Custom Dockerfile handles this via `npm -g ffmpeg-static`.
-- **n8n Code node sandbox**: No `fetch`, `https`, or `curl`. Solution: write Node.js script to `/tmp/` and execute via `child_process.exec('node script.js')` — runs outside sandbox.
-- **Task runner timeout**: Default 300s too short for image generation with retries. Fixed with `N8N_RUNNERS_TASK_TIMEOUT=900` in docker-compose.yml.
-- **Free image API reliability**: Pollinations.ai returns HTTP 530 when overloaded, HuggingFace Spaces sleep/fail when busy. Fixed with triple-provider fallback chain.
-- **Gemini variable response nesting**: Gemini 2.5 Flash returns JSON in unpredictable structures — sometimes flat `{SCRIPT, ...}`, sometimes wrapped `{YOUTUBE_SHORT: {...}}`, sometimes nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}`. Fixed with `findScriptData()` recursive search up to 2 levels deep.
-- **YouTube quota**: 10,000 units/day, upload costs 1,600 units = max ~6 uploads/day.
-
-## PC Upgrade Path (Future)
-
-When running on a PC with NVIDIA GPU (e.g., RTX 3070 Ti + 32GB RAM):
-1. Install ComfyUI + Stable Video Diffusion (SVD-XT) on PC
-2. Replace FFmpeg Ken Burns with SVD image-to-video animation via ComfyUI API
-3. Each of 8 images -> 5-sec AI-animated clip via ComfyUI HTTP API
-4. FFmpeg only for stitching clips + adding audio
-5. Result: AI-animated video instead of zoom/pan effect
-6. n8n Docker can call ComfyUI on PC's local IP (e.g., `http://192.168.x.x:8188/`)
-7. Requires: ComfyUI running with `--listen 0.0.0.0`, SVD model downloaded (~4GB)
+- **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**
+- **v6.8** (2026-03-09): Script stays 110-120 words (~45s narration). `N8N_RUNNERS_TASK_TIMEOUT` 7200→9000 (150 min). animateImages GLOBAL_BUDGET_MS 6000000→9000000ms (150 min), exec timeout 6600000→9600000ms (160 min). Runtime: ~80-110 min.
+- **v6.7** (2026-03-09): Increased HunyuanVideo frames 25→49 (2.04s clips) for smoother slow-motion — slowdown ratio drops from 4.5x to ~2.3x, so minterpolate needs far less interpolation. Increased Gemini script target 80-95→110-120 words for ~45s narration. Added word count validation (throws if <90 words). Poll timeout raised 1200s→1800s for longer clip generation. Expected animation runtime: ~65-75 min (+28 min vs v6.6).
+- **v6.6** (2026-03-09): Fixed minterpolate+xfade incompatibility — root cause: minterpolate was running on ~6fps input (after 4x slowdown setpts), a 5x ratio that corrupts PTS and breaks xfade (hard cuts, short video). Fix: two-pass compose — Pass 1 applies minterpolate at native 24fps→60fps per clip and saves to intermediate file (normalises PTS); Pass 2 runs xfade on intermediate files with guaranteed clean timestamps. Compose time: ~8-12 min. Also added `trim+0.05s` buffer to avoid edge-case clip truncation.
+- **v6.5** (2026-03-08): Quality improvements across all 3 AI nodes. generateImages: 20→30 steps, sampler `euler`→`dpmpp_2m`, scheduler `normal`→`karras`, cfg 7.0→7.5. animateImages: KSampler 15→20 steps, CRF 23→18. composeVideo: Lanczos upscaling (`flags=lanczos`), unsharp mask (`unsharp=luma_amount=0.8`), color grading (`eq=contrast=1.02:saturation=1.1`), encoder `-preset slow -crf 18`, audio 128k→192k. Runtime: 40-60 min → 55-75 min.
+- **v6.4** (2026-03-08): Fixed jittery video — replaced frame duplication with `minterpolate=fps=30:mi_mode=mci` (motion-compensated interpolation) in composeVideo filter chain. Smooth slow-motion from 25 HunyuanVideo frames. Compose step now ~5-10 min (timeout raised to 600s). Also fixed animated WEBP decoding: replaced `SaveAnimatedWEBP` with `SaveImage` (individual PNG frames) in ComfyUI workflow — ffmpeg-static cannot decode animated WEBP (ANIM/ANMF chunks unsupported). animateImages now downloads all PNG frames and assembles to MP4 at 24fps.
+- **v6.3** (2026-03-08): Fixed two composeVideo bugs found via Docker test: (1) `fps=30` moved after `trim+setpts` in FFmpeg filter chain — xfade requires constant frame rate input; (2) replaced `ffprobe` duration probe with `ffmpeg -i` + regex — `ffprobe` binary has wrong permissions in Docker (`node` user can't execute). Dockerfile updated with `chmod a+x` for both binaries (rebuild needed). All 3 AI nodes now tested end-to-end.
+- **v6.2** (2026-03-08): Fixed HunyuanVideo I2V workflow structure — HunyuanImageToVideo is a conditioning node (outputs CONDITIONING+LATENT), requires separate KSampler. Added CLIPVisionEncode (crop=center), TextEncodeHunyuanVideo_ImageToVideo (image_interleave=2), negative CLIPTextEncode. Fixed model paths to use `split_files\\` subdirectory prefixes. Corrected HunyuanImageToVideo param names (`length` not `num_frames`, `start_image` not `image`). Updated animateImages n8n node to 12-node workflow. HunyuanVideo test confirmed working: ~211s (3.5 min) for 25 frames.
+- **v6.1** (2026-03-07): Replaced FLUX NF4 with SDXL base 1.0 for images (~30s/image vs 2-5h in --lowvram). Reduced HunyuanVideo from 49→25 frames and 20→15 steps (~halves clip time). Runtime: 40-60 min. SDXL fits on 8GB VRAM without special flags. No new video model download needed.
+- **v6.0** (2026-03-02): Local AI generation via ComfyUI. Replaced cloud image APIs with FLUX.1 Dev NF4 (768x1344, ~60s/image). Added HunyuanVideo I2V animation (544x960, 49 frames, ~7-12min/clip). Replaced FFmpeg Ken Burns with video clip stitching + slow-stretch. 16 nodes, 15 connections. Runtime: 75-115 min. $0.00/month (fully local).
+- **v5.8** (2026-02-25): Fixed Pollinations.ai URL — migrated to `gen.pollinations.ai/image/` endpoint. API keys now hardcoded in Code node (n8n sandbox blocks env var access). Added provider tracking output. Reduced inter-image delay to 3s.
+- **v5.7** (2026-02-25): Removed Together.ai (no longer free). Pollinations.ai → Pexels → FFmpeg gradient 3-provider stack.
 
 ## Commands
-- Start n8n: `cd /Users/shivanshchoudhary/Downloads/n8n && docker compose up -d`
-- Stop n8n: `cd /Users/shivanshchoudhary/Downloads/n8n && docker compose down`
-- Rebuild image (after Dockerfile changes or n8n updates): `cd /Users/shivanshchoudhary/Downloads/n8n && docker compose build && docker compose up -d`
-- View logs: `docker compose -f /Users/shivanshchoudhary/Downloads/n8n/docker-compose.yml logs -f`
-- Health check: `curl -s http://localhost:5678/healthz`
-- Get workflow via MCP: `n8n_get_workflow` with ID `mlyG42RX4q1yIk8r`
-- Validate workflow: `n8n_validate_workflow` with ID `mlyG42RX4q1yIk8r`
-- List all workflows: `n8n_list_workflows`
+
+Run Docker commands from `D:\N8n` (the parent directory containing `docker-compose.yml`):
+
+```bash
+# n8n lifecycle
+docker compose up -d                           # Start
+docker compose down                            # Stop
+docker compose build && docker compose up -d   # Rebuild (after Dockerfile/n8n version changes)
+docker compose logs -f                         # View logs
+docker compose restart                         # Restart without rebuild
+
+# Health checks
+curl -s http://localhost:5678/healthz           # n8n
+curl http://localhost:8188/system_stats         # ComfyUI (run from Windows host, not Docker)
+
+# Workflow management (via MCP tools in Claude)
+# n8n_get_workflow      -- ID: zuFXklAfWmiZqTZh
+# n8n_validate_workflow -- ID: zuFXklAfWmiZqTZh
+# n8n_list_workflows
+```

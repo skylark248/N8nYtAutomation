@@ -7,10 +7,7 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [
-        -608,
-        0
-      ]
+      "position": [-608, 0]
     },
     {
       "parameters": {
@@ -18,28 +15,20 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "User-Agent",
-              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            },
-            {
-              "name": "Accept",
-              "value": "application/json"
-            }
+            { "name": "User-Agent", "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
+            { "name": "Accept", "value": "application/json" }
           ]
         },
-        "options": {
-          "timeout": 10000
-        }
+        "options": { "timeout": 10000 }
       },
       "id": "fetchReddit",
       "name": "Fetch Reddit Posts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        -400,
-        0
-      ]
+      "position": [-400, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -49,26 +38,21 @@
       "name": "Format Reddit Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -208,
-        0
-      ]
+      "position": [-208, 0]
     },
     {
       "parameters": {
         "url": "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=10",
-        "options": {
-          "timeout": 10000
-        }
+        "options": { "timeout": 10000 }
       },
       "id": "fetchHN",
       "name": "Fetch HN Posts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        0,
-        0
-      ]
+      "position": [0, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -78,10 +62,7 @@
       "name": "Pick Best Story",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        224,
-        0
-      ]
+      "position": [224, 0]
     },
     {
       "parameters": {
@@ -91,60 +72,56 @@
       "name": "Prepare Story Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        448,
-        0
-      ]
+      "position": [448, 0]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=YOUR_GEMINI_API_KEY",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Here are today\\'s trending tech stories:\\n\\n' + $json.rawStory + '\\n\\nPick the SINGLE most interesting, viral tech/AI story from above and write a 45-second YouTube Short script about it.\\n\\nYou MUST respond with ONLY this exact JSON structure (no other format):\\n{\\n  \"SCRIPT\": \"[80-95 word narration. Hook (3s, question or bold claim) then Story (30s, key facts) then Takeaway (12s, why it matters)]\",\\n  \"TITLE\": \"[Catchy title under 70 chars]\",\\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"IMAGE_PROMPTS\": [\\n    \"[Prompt 1: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 2: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 3: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 4: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 5: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 6: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 7: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 8: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\"\\n  ]\\n}' }] }], systemInstruction: { parts: [{ text: 'You are a tech news YouTube Shorts scriptwriter. You read trending stories and write punchy 45-second scripts. ALWAYS respond with a JSON object containing these exact keys: SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS. Never use any other JSON structure.' }] }, generationConfig: { responseMimeType: 'application/json' } }) }}",
-        "options": {
-          "timeout": 60000
-        }
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Here are today\\'s trending tech stories:\\n\\n' + $json.rawStory + '\\n\\nPick the SINGLE most interesting, viral tech/AI story from above and write a 45-second YouTube Short script about it.\\n\\nYou MUST respond with ONLY this exact JSON structure (no other format):\\n{\\n  \"SCRIPT\": \"[110-120 word narration. Hook (5s, punchy question or bold claim) then Story (35s, key facts with energy) then Takeaway (10s, why it matters to viewers)]\",\\n  \"TITLE\": \"[Catchy title under 70 chars]\",\\n  \"DESCRIPTION\": \"[2-3 sentences + #Shorts #TechNews #AI]\",\\n  \"TAGS\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"IMAGE_PROMPTS\": [\\n    \"[Prompt 1: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 2: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 3: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 4: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 5: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 6: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 7: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\",\\n    \"[Prompt 8: vertical 9:16 image, vibrant, tech-themed, photorealistic, no text overlay]\"\\n  ]\\n}' }] }], systemInstruction: { parts: [{ text: 'You are a tech news YouTube Shorts scriptwriter. You read trending stories and write punchy 45-second scripts. ALWAYS respond with a JSON object containing these exact keys: SCRIPT, TITLE, DESCRIPTION, TAGS, IMAGE_PROMPTS. Never use any other JSON structure.' }] }, generationConfig: { responseMimeType: 'application/json' } }) }}",
+        "options": { "timeout": 30000 }
       },
       "id": "scriptGen",
       "name": "Generate Script (Gemini)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        672,
-        0
-      ],
+      "position": [672, 0],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000
     },
     {
       "parameters": {
-        "jsCode": "// Gemini response format: candidates[0].content.parts[0].text\nconst geminiResponse = $input.first().json;\nlet response = '';\n\ntry {\n  response = geminiResponse.candidates[0].content.parts[0].text;\n} catch (e) {\n  throw new Error('Could not extract text from Gemini response: ' + JSON.stringify(geminiResponse).substring(0, 300));\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from Gemini response: ' + response.substring(0, 200));\n  }\n}\n\n// Find the object containing SCRIPT \u2014 Gemini uses variable nesting:\n// Flat: {SCRIPT, TITLE, ...}\n// Wrapped: {YOUTUBE_SHORT: {SCRIPT, ...}}\n// Nested: {story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}\nfunction findScriptData(obj) {\n  if (!obj || typeof obj !== 'object') return null;\n  // Check if this object has SCRIPT directly\n  if (obj.SCRIPT || obj.script) return obj;\n  // Search one level deep in all values\n  for (const key of Object.keys(obj)) {\n    const val = obj[key];\n    if (val && typeof val === 'object' && !Array.isArray(val)) {\n      if (val.SCRIPT || val.script) return val;\n      // Search two levels deep\n      for (const k2 of Object.keys(val)) {\n        const v2 = val[k2];\n        if (v2 && typeof v2 === 'object' && !Array.isArray(v2)) {\n          if (v2.SCRIPT || v2.script) return v2;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nlet data = findScriptData(parsed);\n\n// Fallback: if Gemini returned story analysis format (STORY_TITLE, KEY_FACTS, WHY_TRENDING)\n// instead of script format, throw a clear error so auto-retry can kick in\nif (!data && (parsed.STORY_TITLE || parsed.story_title)) {\n  throw new Error('Gemini returned story analysis format instead of script format. Keys: ' + Object.keys(parsed).join(', ') + '. Expected SCRIPT, TITLE, IMAGE_PROMPTS. Retry should fix this.');\n}\n\nif (!data) throw new Error('Could not find SCRIPT in response. Keys: ' + JSON.stringify(Object.keys(parsed)) + '. Full: ' + JSON.stringify(parsed).substring(0, 500));\n\n// Normalize keys (handle both UPPER and lower case)\nconst script = data.SCRIPT || data.script;\nconst title = data.TITLE || data.title;\nconst description = data.DESCRIPTION || data.description || '';\nconst tags = data.TAGS || data.tags || [];\nconst imagePrompts = data.IMAGE_PROMPTS || data.image_prompts || data.imagePrompts || [];\n\nif (!script) throw new Error('SCRIPT field is empty');\nif (!title) throw new Error('TITLE field is empty');\nif (!Array.isArray(imagePrompts) || imagePrompts.length < 4) {\n  throw new Error('Need at least 4 image prompts, got ' + (Array.isArray(imagePrompts) ? imagePrompts.length : 'non-array'));\n}\n\nconst wordCount = script.split(/\\s+/).length;\n\nreturn {\n  json: {\n    script: script,\n    title: title,\n    description: description,\n    tags: Array.isArray(tags) ? tags : [],\n    imagePrompts: imagePrompts,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
+        "jsCode": "// Gemini response format: candidates[0].content.parts[0].text\nconst geminiResponse = $input.first().json;\nlet response = '';\n\ntry {\n  response = geminiResponse.candidates[0].content.parts[0].text;\n} catch (e) {\n  throw new Error('Could not extract text from Gemini response: ' + JSON.stringify(geminiResponse).substring(0, 300));\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(response);\n} catch (e) {\n  const jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Could not parse script JSON from Gemini response: ' + response.substring(0, 200));\n  }\n}\n\nfunction findScriptData(obj) {\n  if (!obj || typeof obj !== 'object') return null;\n  if (obj.SCRIPT || obj.script) return obj;\n  for (const key of Object.keys(obj)) {\n    const val = obj[key];\n    if (val && typeof val === 'object' && !Array.isArray(val)) {\n      if (val.SCRIPT || val.script) return val;\n      for (const k2 of Object.keys(val)) {\n        const v2 = val[k2];\n        if (v2 && typeof v2 === 'object' && !Array.isArray(v2)) {\n          if (v2.SCRIPT || v2.script) return v2;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nlet data = findScriptData(parsed);\n\nif (!data && (parsed.STORY_TITLE || parsed.story_title)) {\n  throw new Error('Gemini returned story analysis format instead of script format. Keys: ' + Object.keys(parsed).join(', ') + '. Expected SCRIPT, TITLE, IMAGE_PROMPTS. Retry should fix this.');\n}\n\nif (!data) throw new Error('Could not find SCRIPT in response. Keys: ' + JSON.stringify(Object.keys(parsed)) + '. Full: ' + JSON.stringify(parsed).substring(0, 500));\n\nconst script = data.SCRIPT || data.script;\nconst title = data.TITLE || data.title;\nconst description = data.DESCRIPTION || data.description || '';\nconst tags = data.TAGS || data.tags || [];\nconst imagePrompts = data.IMAGE_PROMPTS || data.image_prompts || data.imagePrompts || [];\n\nif (!script) throw new Error('SCRIPT field is empty');\nif (!title) throw new Error('TITLE field is empty');\nif (!Array.isArray(imagePrompts) || imagePrompts.length < 4) {\n  throw new Error('Need at least 4 image prompts, got ' + (Array.isArray(imagePrompts) ? imagePrompts.length : 'non-array'));\n}\n\nconst wordCount = script.split(/\\s+/).length;\nif (wordCount < 90) {\n  throw new Error('Script too short: ' + wordCount + ' words (need ~120). Retry should fix this.');\n}\n\nreturn {\n  json: {\n    script: script,\n    title: title,\n    description: description,\n    tags: Array.isArray(tags) ? tags : [],\n    imagePrompts: imagePrompts,\n    wordCount: wordCount,\n    timestamp: new Date().toISOString()\n  }\n};"
       },
       "id": "parseScript",
       "name": "Parse Script JSON",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        880,
-        0
-      ],
+      "position": [880, 0],
       "retryOnFail": false
     },
     {
       "parameters": {
-        "jsCode": "// Generate images with 3 fallback providers:\n// 1. Pollinations.ai with secret key (no rate limit, ~10-20s)\n// 2. Pexels stock photos (real photos from keyword search)\n// 3. FFmpeg gradient (always works)\n// Global time budget: 780s (leaves 120s buffer within 900s task timeout)\nconst { exec, execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst scriptData = $input.first().json;\nconst prompts = scriptData.imagePrompts || [];\nif (prompts.length === 0) throw new Error('No image prompts found');\n\nconst tmpDir = '/tmp/n8n_images_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  // API keys hardcoded directly (same approach as Gemini API key in URL)\n  const config = {\n    prompts,\n    pollinationsKey: 'YOUR_POLLINATIONS_SECRET_KEY',\n    pexelsKey: 'YOUR_PEXELS_API_KEY'\n  };\n  fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(config));\n\n  const script = [\n    \"const https = require('https');\",\n    \"const http = require('http');\",\n    \"const { execSync } = require('child_process');\",\n    \"const fs = require('fs');\",\n    \"const path = require('path');\",\n    \"const tmpDir = process.argv[2];\",\n    \"const config = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));\",\n    \"const prompts = config.prompts;\",\n    \"const POLL_KEY = config.pollinationsKey || '';\",\n    \"const PEXELS_KEY = config.pexelsKey || '';\",\n    \"const sleep = ms => new Promise(r => setTimeout(r, ms));\",\n    \"const START_TIME = Date.now();\",\n    \"const TIME_BUDGET_MS = 780000;\",\n    \"function timeLeft() { return TIME_BUDGET_MS - (Date.now() - START_TIME); }\",\n    \"\",\n    \"function httpReq(url, opts) {\",\n    \"  return new Promise((resolve, reject) => {\",\n    \"    const u = new URL(url);\",\n    \"    const mod = u.protocol === 'http:' ? http : https;\",\n    \"    const method = (opts&&opts.method)||'GET';\",\n    \"    const headers = (opts&&opts.headers)||{};\",\n    \"    const body = opts&&opts.body;\",\n    \"    const maxR = (opts&&opts.maxR!==undefined)?opts.maxR:10;\",\n    \"    const tout = (opts&&opts.timeout)||60000;\",\n    \"    const r = mod.request({hostname:u.hostname,port:u.port,path:u.pathname+u.search,method,headers:{'User-Agent':'Mozilla/5.0',...headers}}, res => {\",\n    \"      if (res.statusCode>=300 && res.statusCode<400 && res.headers.location) {\",\n    \"        if (maxR<=0){reject(new Error('Too many redirects'));return;}\",\n    \"        const loc = res.headers.location.startsWith('http')?res.headers.location:u.protocol+'//'+u.hostname+res.headers.location;\",\n    \"        httpReq(loc,{...opts,maxR:maxR-1}).then(resolve).catch(reject);return;\",\n    \"      }\",\n    \"      const chunks=[];\",\n    \"      res.on('data',c=>chunks.push(c));\",\n    \"      res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));\",\n    \"    });\",\n    \"    r.on('error',reject);\",\n    \"    r.setTimeout(tout,()=>{r.destroy();reject(new Error('Timeout'));});\",\n    \"    if(body)r.write(body);\",\n    \"    r.end();\",\n    \"  });\",\n    \"}\",\n    \"\",\n    \"// Provider 1: Pollinations.ai (new unified endpoint gen.pollinations.ai)\",\n    \"async function tryPollinations(prompt, idx) {\",\n    \"  if (!POLL_KEY) throw new Error('No POLLINATIONS_SECRET_KEY');\",\n    \"  const seed = Date.now() + idx * 1000;\",\n    \"  const url = 'https://gen.pollinations.ai/image/' + encodeURIComponent(prompt) + '?model=flux&width=768&height=1344&nologo=true&seed=' + seed;\",\n    \"  const headers = { 'Authorization': 'Bearer ' + POLL_KEY };\",\n    \"  const res = await httpReq(url, { timeout: 45000, headers });\",\n    \"  if (res.status !== 200) throw new Error('Poll HTTP ' + res.status);\",\n    \"  const ct = (res.headers['content-type'] || '').toLowerCase();\",\n    \"  if (!ct.includes('image') || res.body.length < 5000) throw new Error('Poll: not image (ct=' + ct + ',sz=' + res.body.length + ')');\",\n    \"  return res.body;\",\n    \"}\",\n    \"\",\n    \"// Provider 2: Pexels stock photos\",\n    \"async function tryPexels(prompt) {\",\n    \"  if (!PEXELS_KEY) throw new Error('No PEXELS_API_KEY');\",\n    \"  const keywords = prompt\",\n    \"    .replace(/vertical|9:16|image|vibrant|tech-themed|photorealistic|no text overlay|cinematic|dramatic|detailed|high quality|ultra|8k|4k|hd|portrait|landscape/gi, '')\",\n    \"    .replace(/[,.:;!?()\\\\[\\\\]{}]/g, ' ')\",\n    \"    .split(/\\\\s+/)\",\n    \"    .filter(w => w.length > 2)\",\n    \"    .slice(0, 4)\",\n    \"    .join(' ')\",\n    \"    .trim() || 'technology';\",\n    \"  const url = 'https://api.pexels.com/v1/search?query=' + encodeURIComponent(keywords) + '&orientation=portrait&per_page=3&size=large';\",\n    \"  const res = await httpReq(url, {\",\n    \"    timeout: 15000,\",\n    \"    headers: { 'Authorization': PEXELS_KEY }\",\n    \"  });\",\n    \"  if (res.status !== 200) throw new Error('Pexels HTTP ' + res.status);\",\n    \"  const json = JSON.parse(res.body.toString());\",\n    \"  if (!json.photos || json.photos.length === 0) throw new Error('Pexels: no photos found');\",\n    \"  const photo = json.photos[Math.floor(Math.random() * json.photos.length)];\",\n    \"  const imgUrl = photo.src.large2x || photo.src.large || photo.src.original;\",\n    \"  const imgRes = await httpReq(imgUrl, { timeout: 15000 });\",\n    \"  if (imgRes.status !== 200 || imgRes.body.length < 5000) throw new Error('Pexels: bad download');\",\n    \"  return imgRes.body;\",\n    \"}\",\n    \"\",\n    \"// Provider 3: FFmpeg gradient (always works, local)\",\n    \"function generateGradient(idx) {\",\n    \"  const colors = ['0x1a1a2e','0x16213e','0x0f3460','0x533483','0x2b2d42','0x264653','0x2a9d8f','0xe76f51'];\",\n    \"  const c = colors[idx % colors.length];\",\n    \"  const out = path.join(tmpDir, 'grad_' + idx + '.png');\",\n    \"  execSync('ffmpeg -y -f lavfi -i color=c=' + c + ':s=768x1344:d=1 -frames:v 1 ' + out, { timeout: 10000 });\",\n    \"  return fs.readFileSync(out);\",\n    \"}\",\n    \"\",\n    \"async function genImage(prompt, idx, remaining) {\",\n    \"  const tl = timeLeft();\",\n    \"  const perImageBudget = tl / remaining;\",\n    \"\",\n    \"  if (perImageBudget < 20000) {\",\n    \"    process.stderr.write('  #' + (idx+1) + ' budget critical (' + Math.round(tl/1000) + 's left) -> gradient\\\\n');\",\n    \"    return { base64: generateGradient(idx).toString('base64'), provider: 'gradient' };\",\n    \"  }\",\n    \"\",\n    \"  if (perImageBudget < 40000) {\",\n    \"    process.stderr.write('  #' + (idx+1) + ' budget low (' + Math.round(tl/1000) + 's left) -> Pexels/gradient\\\\n');\",\n    \"    try {\",\n    \"      const img = await tryPexels(prompt);\",\n    \"      process.stderr.write('  #' + (idx+1) + ' OK via Pexels (' + img.length + ' bytes)\\\\n');\",\n    \"      return { base64: img.toString('base64'), provider: 'Pexels' };\",\n    \"    } catch(e) {\",\n    \"      process.stderr.write('    Pexels: ' + e.message.substring(0,80) + '\\\\n');\",\n    \"      return { base64: generateGradient(idx).toString('base64'), provider: 'gradient' };\",\n    \"    }\",\n    \"  }\",\n    \"\",\n    \"  // Try Pollinations (2 attempts)\",\n    \"  for (let a = 0; a < 2; a++) {\",\n    \"    if (timeLeft() < 50000) break;\",\n    \"    try {\",\n    \"      if (a > 0) { process.stderr.write('    Pollinations retry...\\\\n'); await sleep(5000); }\",\n    \"      const img = await tryPollinations(prompt, idx);\",\n    \"      process.stderr.write('  #' + (idx+1) + ' OK via Pollinations (' + img.length + ' bytes)\\\\n');\",\n    \"      return { base64: img.toString('base64'), provider: 'Pollinations' };\",\n    \"    } catch(e) {\",\n    \"      process.stderr.write('    Pollinations[' + a + ']: ' + e.message.substring(0,120) + '\\\\n');\",\n    \"    }\",\n    \"  }\",\n    \"\",\n    \"  // Try Pexels stock photos\",\n    \"  try {\",\n    \"    const img = await tryPexels(prompt);\",\n    \"    process.stderr.write('  #' + (idx+1) + ' OK via Pexels (' + img.length + ' bytes)\\\\n');\",\n    \"    return { base64: img.toString('base64'), provider: 'Pexels' };\",\n    \"  } catch(e) {\",\n    \"    process.stderr.write('    Pexels: ' + e.message.substring(0,80) + '\\\\n');\",\n    \"  }\",\n    \"\",\n    \"  // Last resort: gradient\",\n    \"  process.stderr.write('  #' + (idx+1) + ' using gradient fallback\\\\n');\",\n    \"  return { base64: generateGradient(idx).toString('base64'), provider: 'gradient' };\",\n    \"}\",\n    \"\",\n    \"async function main() {\",\n    \"  const res = [];\",\n    \"  const providerLog = [];\",\n    \"  process.stderr.write('Keys: Pollinations=' + (POLL_KEY ? 'yes(' + POLL_KEY.substring(0,6) + '...)' : 'NO') + ' Pexels=' + (PEXELS_KEY ? 'yes(' + PEXELS_KEY.substring(0,6) + '...)' : 'NO') + '\\\\n');\",\n    \"  process.stderr.write('Endpoint: gen.pollinations.ai/image/ (unified API)\\\\n');\",\n    \"  for (let i = 0; i < prompts.length; i++) {\",\n    \"    if (i > 0) { await sleep(3000); }\",\n    \"    const remaining = prompts.length - i;\",\n    \"    process.stderr.write('Image ' + (i+1) + '/' + prompts.length + ' (' + Math.round(timeLeft()/1000) + 's left)\\\\n');\",\n    \"    const result = await genImage(prompts[i], i, remaining);\",\n    \"    providerLog.push(result.provider);\",\n    \"    res.push(result.base64);\",\n    \"  }\",\n    \"  const summary = providerLog.join(', ');\",\n    \"  process.stderr.write('Done. Providers: ' + summary + '\\\\n');\",\n    \"  // Output both images and provider info\",\n    \"  process.stdout.write(JSON.stringify({ images: res, providers: providerLog }));\",\n    \"}\",\n    \"main().catch(e => { process.stderr.write('FATAL: ' + e.message.substring(0,500) + '\\\\n'); process.exit(1); });\"\n  ];\n\n  fs.writeFileSync(path.join(tmpDir, 'generate.js'), script.join('\\n'));\n\n  const output = await new Promise((resolve, reject) => {\n    exec(\n      `node \"${path.join(tmpDir, 'generate.js')}\" \"${tmpDir}\"`,\n      { timeout: 840000, maxBuffer: 100 * 1024 * 1024 },\n      (error, stdout, stderr) => {\n        if (error) {\n          const fm = (stderr||'').match(/FATAL: ([\\s\\S]+)/);\n          const tail = (stderr||'').split('\\n').filter(l=>l.trim()).slice(-5).join(' | ');\n          reject(new Error(fm ? fm[1].trim() : tail || error.message));\n        } else {\n          resolve(stdout);\n        }\n      }\n    );\n  });\n\n  const result = JSON.parse(output);\n  const imageBase64Array = result.images;\n  const providers = result.providers;\n\n  return {\n    json: {\n      imageBase64Array,\n      imageCount: imageBase64Array.length,\n      providers,\n      providerSummary: providers.join(', '),\n      script: scriptData.script,\n      title: scriptData.title,\n      description: scriptData.description,\n      tags: scriptData.tags\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(e) {}\n}"
+        "jsCode": "// Generate 8 images via ComfyUI SDXL base 1.0 (fully local)\n// Quality settings: 30 steps, dpmpp_2m+karras sampler, cfg=7.5\nconst { exec } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst scriptData = $input.first().json;\nconst prompts = scriptData.imagePrompts || [];\nif (prompts.length === 0) throw new Error('No image prompts found');\n\nconst tmpDir = '/tmp/n8n_sdxl_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  const workflow = {\n    '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'sd_xl_base_1.0.safetensors' } },\n    '2': { class_type: 'CLIPTextEncode', inputs: { text: 'PLACEHOLDER', clip: ['1', 1] } },\n    '3': { class_type: 'CLIPTextEncode', inputs: { text: 'blurry, low quality, distorted, ugly, worst quality, low resolution, jpeg artifacts, watermark, text, duplicate, oversaturated, flat lighting', clip: ['1', 1] } },\n    '4': { class_type: 'EmptyLatentImage', inputs: { width: 768, height: 1344, batch_size: 1 } },\n    '5': { class_type: 'KSampler', inputs: { model: ['1', 0], positive: ['2', 0], negative: ['3', 0], latent_image: ['4', 0], seed: 0, steps: 30, cfg: 7.5, sampler_name: 'dpmpp_2m', scheduler: 'karras', denoise: 1.0 } },\n    '6': { class_type: 'VAEDecode', inputs: { samples: ['5', 0], vae: ['1', 2] } },\n    '7': { class_type: 'SaveImage', inputs: { filename_prefix: 'sdxl_n8n', images: ['6', 0] } }\n  };\n\n  const config = { prompts, workflow };\n  fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(config));\n\n  const script = [\n    \"const http = require('http');\",\n    \"const fs = require('fs');\",\n    \"const path = require('path');\",\n    \"const tmpDir = process.argv[2];\",\n    \"const config = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));\",\n    \"const prompts = config.prompts;\",\n    \"const WORKFLOW = config.workflow;\",\n    \"const COMFYUI = 'http://host.docker.internal:8188';\",\n    \"const sleep = ms => new Promise(r => setTimeout(r, ms));\",\n    \"\",\n    \"function httpReq(urlStr, opts) {\",\n    \"  return new Promise((resolve, reject) => {\",\n    \"    const u = new URL(urlStr);\",\n    \"    const method = (opts&&opts.method)||'GET';\",\n    \"    const headers = (opts&&opts.headers)||{};\",\n    \"    const body = opts&&opts.body;\",\n    \"    const tout = (opts&&opts.timeout)||120000;\",\n    \"    const r = http.request({hostname:u.hostname,port:u.port||8188,path:u.pathname+u.search,method,headers:{'Content-Type':'application/json',...headers}}, res => {\",\n    \"      const chunks=[];\",\n    \"      res.on('data',c=>chunks.push(c));\",\n    \"      res.on('end',()=>resolve({status:res.statusCode,body:Buffer.concat(chunks)}));\",\n    \"    });\",\n    \"    r.on('error',reject);\",\n    \"    r.setTimeout(tout,()=>{r.destroy();reject(new Error('Timeout'));});\",\n    \"    if(body)r.write(body);\",\n    \"    r.end();\",\n    \"  });\",\n    \"}\",\n    \"\",\n    \"async function submitPrompt(wf, clientId) {\",\n    \"  const payload = JSON.stringify({ prompt: wf, client_id: clientId });\",\n    \"  const res = await httpReq(COMFYUI + '/prompt', { method: 'POST', body: payload });\",\n    \"  if (res.status !== 200) throw new Error('Submit failed: HTTP ' + res.status + ' ' + res.body.toString().substring(0, 500));\",\n    \"  return JSON.parse(res.body.toString()).prompt_id;\",\n    \"}\",\n    \"\",\n    \"async function pollHistory(promptId, timeoutMs) {\",\n    \"  const start = Date.now();\",\n    \"  while (Date.now() - start < timeoutMs) {\",\n    \"    const res = await httpReq(COMFYUI + '/history/' + promptId, { timeout: 10000 });\",\n    \"    if (res.status === 200) {\",\n    \"      const data = JSON.parse(res.body.toString());\",\n    \"      if (data[promptId] && data[promptId].status && data[promptId].status.completed !== undefined) {\",\n    \"        if (data[promptId].status.status_str === 'error') {\",\n    \"          const err = data[promptId].status.messages.find(m => m[0] === 'execution_error');\",\n    \"          throw new Error('ComfyUI error: ' + (err ? JSON.stringify(err[1]).substring(0, 300) : 'unknown'));\",\n    \"        }\",\n    \"        if (data[promptId].outputs && Object.keys(data[promptId].outputs).length > 0) return data[promptId];\",\n    \"      }\",\n    \"    }\",\n    \"    await sleep(3000);\",\n    \"  }\",\n    \"  throw new Error('ComfyUI timeout after ' + (timeoutMs/1000) + 's for prompt ' + promptId);\",\n    \"}\",\n    \"\",\n    \"async function downloadImage(filename, subfolder, type) {\",\n    \"  const url = COMFYUI + '/view?filename=' + encodeURIComponent(filename) + '&subfolder=' + encodeURIComponent(subfolder||'') + '&type=' + encodeURIComponent(type||'output');\",\n    \"  const res = await httpReq(url, { timeout: 30000 });\",\n    \"  if (res.status !== 200) throw new Error('Download failed: HTTP ' + res.status);\",\n    \"  return res.body;\",\n    \"}\",\n    \"\",\n    \"async function generateImage(prompt, idx) {\",\n    \"  const wf = JSON.parse(JSON.stringify(WORKFLOW));\",\n    \"  wf['2'].inputs.text = prompt;\",\n    \"  wf['5'].inputs.seed = Math.floor(Math.random() * 2147483647);\",\n    \"  const clientId = 'n8n-sdxl-' + Date.now() + '-' + idx;\",\n    \"  const promptId = await submitPrompt(wf, clientId);\",\n    \"  process.stderr.write('  Submitted ' + promptId.substring(0, 8) + '...\\\\n');\",\n    \"  const result = await pollHistory(promptId, 300000);\",\n    \"  const imgInfo = result.outputs['7'].images[0];\",\n    \"  const imgBuf = await downloadImage(imgInfo.filename, imgInfo.subfolder, imgInfo.type);\",\n    \"  return imgBuf.toString('base64');\",\n    \"}\",\n    \"\",\n    \"async function main() {\",\n    \"  const results = [];\",\n    \"  for (let i = 0; i < prompts.length; i++) {\",\n    \"    process.stderr.write('Image ' + (i+1) + '/' + prompts.length + '\\\\n');\",\n    \"    const b64 = await generateImage(prompts[i], i);\",\n    \"    results.push(b64);\",\n    \"    process.stderr.write('  Done (' + Math.round(b64.length/1024) + ' KB)\\\\n');\",\n    \"  }\",\n    \"  process.stdout.write(JSON.stringify({ images: results }));\",\n    \"}\",\n    \"main().catch(e => { process.stderr.write('FATAL: ' + e.message + '\\\\n'); process.exit(1); });\"\n  ];\n\n  fs.writeFileSync(path.join(tmpDir, 'generate.js'), script.join('\\n'));\n\n  const output = await new Promise((resolve, reject) => {\n    exec(\n      `node \"${path.join(tmpDir, 'generate.js')}\" \"${tmpDir}\"`,\n      { timeout: 900000, maxBuffer: 200 * 1024 * 1024 },\n      (error, stdout, stderr) => {\n        if (error) {\n          const fm = (stderr||'').match(/FATAL: ([\\s\\S]+)/);\n          const tail = (stderr||'').split('\\n').filter(l=>l.trim()).slice(-5).join(' | ');\n          reject(new Error(fm ? fm[1].trim() : tail || error.message));\n        } else {\n          resolve(stdout);\n        }\n      }\n    );\n  });\n\n  const result = JSON.parse(output);\n\n  return {\n    json: {\n      imageBase64Array: result.images,\n      imageCount: result.images.length,\n      script: scriptData.script,\n      title: scriptData.title,\n      description: scriptData.description,\n      tags: scriptData.tags,\n      imagePrompts: scriptData.imagePrompts\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(e) {}\n}"
       },
       "id": "generateImages",
-      "name": "Generate Images (FLUX)",
+      "name": "Generate Images (ComfyUI SDXL)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1200,
-        0
-      ]
+      "position": [1200, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Animate 8 images into video clips via ComfyUI HunyuanVideo I2V Q4 GGUF (fully local)\n// 49 frames @ 24fps = ~2.04s per clip\nconst { exec, execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst imgData = $input.first().json;\nconst images = imgData.imageBase64Array || [];\nif (images.length === 0) throw new Error('No images found from Generate Images');\n\nconst tmpDir = '/tmp/n8n_hunyuan_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  const workflow = {\n    '1': { class_type: 'UnetLoaderGGUF', inputs: { unet_name: 'hunyuan-video-i2v-720p-Q4_K_M.gguf' } },\n    '2': { class_type: 'DualCLIPLoader', inputs: { clip_name1: 'split_files\\\\text_encoder\\\\llava_llama3_fp8_scaled.safetensors', clip_name2: 'clip_l.safetensors', type: 'hunyuan_video' } },\n    '3': { class_type: 'CLIPVisionLoader', inputs: { clip_name: 'split_files\\\\clip_vision\\\\llava_llama3_vision.safetensors' } },\n    '4': { class_type: 'VAELoader', inputs: { vae_name: 'split_files\\\\vae\\\\hunyuan_video_vae_bf16.safetensors' } },\n    '5': { class_type: 'LoadImage', inputs: { image: 'PLACEHOLDER' } },\n    '6': { class_type: 'CLIPVisionEncode', inputs: { clip_vision: ['3', 0], image: ['5', 0], crop: 'center' } },\n    '7': { class_type: 'TextEncodeHunyuanVideo_ImageToVideo', inputs: { prompt: 'PLACEHOLDER', clip: ['2', 0], clip_vision_output: ['6', 0], image_interleave: 2 } },\n    '8': { class_type: 'HunyuanImageToVideo', inputs: { positive: ['7', 0], vae: ['4', 0], width: 544, height: 960, length: 49, batch_size: 1, guidance_type: 'v2 (replace)', start_image: ['5', 0] } },\n    '9': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['2', 0] } },\n    '10': { class_type: 'KSampler', inputs: { model: ['1', 0], positive: ['8', 0], negative: ['9', 0], latent_image: ['8', 1], seed: 0, steps: 20, cfg: 1.0, sampler_name: 'euler', scheduler: 'normal', denoise: 1.0 } },\n    '11': { class_type: 'VAEDecodeTiled', inputs: { samples: ['10', 0], vae: ['4', 0], tile_size: 128, overlap: 32, temporal_size: 32, temporal_overlap: 4 } },\n    '12': { class_type: 'SaveImage', inputs: { filename_prefix: 'hunyuan_n8n', images: ['11', 0] } }\n  };\n\n  const motions = [\n    'slow cinematic zoom in, subtle atmospheric movement',\n    'gentle camera pan from left to right, slight depth-of-field shift',\n    'smooth dolly forward motion, ambient particle effects',\n    'slow dramatic zoom out revealing the full scene, subtle lighting changes',\n    'camera slowly orbiting around the subject, atmospheric haze',\n    'gentle upward tilt, light rays subtly shifting',\n    'smooth lateral tracking shot, foreground and background parallax',\n    'slow push in with soft focus transition, cinematic lighting'\n  ];\n\n  const imagePrompts = imgData.imagePrompts || [];\n  const motionPrompts = images.map((_, i) => {\n    const motion = motions[i % motions.length];\n    const origPrompt = imagePrompts[i] || '';\n    return motion + '. ' + origPrompt;\n  });\n\n  const config = { images, workflow, motionPrompts };\n  fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(config));\n\n  const script = [\n    \"const http = require('http');\",\n    \"const fs = require('fs');\",\n    \"const path = require('path');\",\n    \"const { execSync } = require('child_process');\",\n    \"const tmpDir = process.argv[2];\",\n    \"const config = JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf8'));\",\n    \"const images = config.images;\",\n    \"const WORKFLOW = config.workflow;\",\n    \"const motionPrompts = config.motionPrompts;\",\n    \"const COMFYUI = 'http://host.docker.internal:8188';\",\n    \"const GLOBAL_BUDGET_MS = 9000000;\",\n    \"const START = Date.now();\",\n    \"const sleep = ms => new Promise(r => setTimeout(r, ms));\",\n    \"function timeLeft() { return GLOBAL_BUDGET_MS - (Date.now() - START); }\",\n    \"\",\n    \"function httpReq(urlStr, opts) {\",\n    \"  return new Promise((resolve, reject) => {\",\n    \"    const u = new URL(urlStr);\",\n    \"    const method = (opts&&opts.method)||'GET';\",\n    \"    const headers = (opts&&opts.headers)||{};\",\n    \"    const body = opts&&opts.body;\",\n    \"    const tout = (opts&&opts.timeout)||120000;\",\n    \"    const r = http.request({hostname:u.hostname,port:u.port||8188,path:u.pathname+u.search,method,headers}, res => {\",\n    \"      const chunks=[];\",\n    \"      res.on('data',c=>chunks.push(c));\",\n    \"      res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));\",\n    \"    });\",\n    \"    r.on('error',reject);\",\n    \"    r.setTimeout(tout,()=>{r.destroy();reject(new Error('Timeout'));});\",\n    \"    if(body)r.write(body);\",\n    \"    r.end();\",\n    \"  });\",\n    \"}\",\n    \"\",\n    \"async function uploadImage(imgPath, filename) {\",\n    \"  const fileData = fs.readFileSync(imgPath);\",\n    \"  const boundary = '----n8nboundary' + Date.now();\",\n    \"  const bodyStart = Buffer.from('--' + boundary + '\\\\r\\\\nContent-Disposition: form-data; name=\\\"image\\\"; filename=\\\"' + filename + '\\\"\\\\r\\\\nContent-Type: image/png\\\\r\\\\n\\\\r\\\\n');\",\n    \"  const bodyEnd = Buffer.from('\\\\r\\\\n--' + boundary + '\\\\r\\\\nContent-Disposition: form-data; name=\\\"overwrite\\\"\\\\r\\\\n\\\\r\\\\ntrue\\\\r\\\\n--' + boundary + '--\\\\r\\\\n');\",\n    \"  const fullBody = Buffer.concat([bodyStart, fileData, bodyEnd]);\",\n    \"  const res = await httpReq(COMFYUI + '/upload/image', {\",\n    \"    method: 'POST',\",\n    \"    headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary, 'Content-Length': fullBody.length },\",\n    \"    body: fullBody, timeout: 30000\",\n    \"  });\",\n    \"  if (res.status !== 200) throw new Error('Upload failed: HTTP ' + res.status);\",\n    \"  return JSON.parse(res.body.toString()).name;\",\n    \"}\",\n    \"\",\n    \"async function submitPrompt(wf, clientId) {\",\n    \"  const payload = JSON.stringify({ prompt: wf, client_id: clientId });\",\n    \"  const res = await httpReq(COMFYUI + '/prompt', { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json' } });\",\n    \"  if (res.status !== 200) throw new Error('Submit failed: HTTP ' + res.status + ' ' + res.body.toString().substring(0, 200));\",\n    \"  return JSON.parse(res.body.toString()).prompt_id;\",\n    \"}\",\n    \"\",\n    \"async function pollHistory(promptId, timeoutMs) {\",\n    \"  const start = Date.now();\",\n    \"  while (Date.now() - start < timeoutMs) {\",\n    \"    try {\",\n    \"      const res = await httpReq(COMFYUI + '/history/' + promptId, { timeout: 10000 });\",\n    \"      if (res.status === 200) {\",\n    \"        const data = JSON.parse(res.body.toString());\",\n    \"        if (data[promptId] && data[promptId].status) {\",\n    \"          if (data[promptId].status.status_str === 'error') {\",\n    \"            const err = data[promptId].status.messages.find(m => m[0] === 'execution_error');\",\n    \"            throw new Error('ComfyUI error: ' + (err ? JSON.stringify(err[1]).substring(0, 300) : 'unknown'));\",\n    \"          }\",\n    \"          if (data[promptId].outputs && Object.keys(data[promptId].outputs).length > 0) return data[promptId];\",\n    \"        }\",\n    \"      }\",\n    \"    } catch(e) { if (e.message.startsWith('ComfyUI error')) throw e; }\",\n    \"    await sleep(5000);\",\n    \"  }\",\n    \"  throw new Error('ComfyUI timeout after ' + (timeoutMs/1000) + 's');\",\n    \"}\",\n    \"\",\n    \"async function downloadFile(filename, subfolder, type) {\",\n    \"  const url = COMFYUI + '/view?filename=' + encodeURIComponent(filename) + '&subfolder=' + encodeURIComponent(subfolder||'') + '&type=' + encodeURIComponent(type||'output');\",\n    \"  const res = await httpReq(url, { timeout: 60000 });\",\n    \"  if (res.status !== 200) throw new Error('Download failed: HTTP ' + res.status);\",\n    \"  return res.body;\",\n    \"}\",\n    \"\",\n    \"function makeStaticClip(imgPath, outPath, duration) {\",\n    \"  execSync('ffmpeg -y -loop 1 -t ' + duration + ' -i \\\"' + imgPath + '\\\" -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -vf scale=544:960:force_original_aspect_ratio=increase,crop=544:960 \\\"' + outPath + '\\\"', { timeout: 30000 });\",\n    \"}\",\n    \"\",\n    \"async function animateImage(imgBase64, motionPrompt, idx) {\",\n    \"  const imgPath = path.join(tmpDir, 'img_' + idx + '.png');\",\n    \"  fs.writeFileSync(imgPath, Buffer.from(imgBase64, 'base64'));\",\n    \"\",\n    \"  const remaining = images.length - idx;\",\n    \"  const perClipBudget = timeLeft() / remaining;\",\n    \"  if (perClipBudget < 120000) {\",\n    \"    process.stderr.write('  Budget low, using static clip\\\\n');\",\n    \"    const mp4Path = path.join(tmpDir, 'clip_' + idx + '.mp4');\",\n    \"    makeStaticClip(imgPath, mp4Path, 3);\",\n    \"    return { clip: fs.readFileSync(mp4Path).toString('base64'), duration: 3.0 };\",\n    \"  }\",\n    \"\",\n    \"  const uploadedName = await uploadImage(imgPath, 'n8n_img_' + idx + '.png');\",\n    \"  process.stderr.write('  Uploaded as: ' + uploadedName + '\\\\n');\",\n    \"\",\n    \"  const wf = JSON.parse(JSON.stringify(WORKFLOW));\",\n    \"  wf['5'].inputs.image = uploadedName;\",\n    \"  wf['7'].inputs.prompt = motionPrompt;\",\n    \"  wf['10'].inputs.seed = Math.floor(Math.random() * 2147483647);\",\n    \"\",\n    \"  const clientId = 'n8n-hunyuan-' + Date.now() + '-' + idx;\",\n    \"  const promptId = await submitPrompt(wf, clientId);\",\n    \"  process.stderr.write('  Submitted ' + promptId.substring(0, 8) + '...\\\\n');\",\n    \"  const result = await pollHistory(promptId, 1800000);\",\n    \"\",\n    \"  const frames = (result.outputs['12'] || {}).images || [];\",\n    \"  if (frames.length === 0) throw new Error('No output frames from SaveImage node 12');\",\n    \"  process.stderr.write('  Downloading ' + frames.length + ' frames...\\\\n');\",\n    \"\",\n    \"  const framesDir = path.join(tmpDir, 'frames_' + idx);\",\n    \"  fs.mkdirSync(framesDir, { recursive: true });\",\n    \"  for (let fi = 0; fi < frames.length; fi++) {\",\n    \"    const fInfo = frames[fi];\",\n    \"    const fBuf = await downloadFile(fInfo.filename, fInfo.subfolder, fInfo.type);\",\n    \"    fs.writeFileSync(path.join(framesDir, 'frame_' + String(fi).padStart(5, '0') + '.png'), fBuf);\",\n    \"  }\",\n    \"\",\n    \"  const mp4Path = path.join(tmpDir, 'clip_' + idx + '.mp4');\",\n    \"  execSync('ffmpeg -y -r 24 -i \\\"' + path.join(framesDir, 'frame_%05d.png') + '\\\" -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p \\\"' + mp4Path + '\\\"', { timeout: 60000 });\",\n    \"\",\n    \"  const dur = frames.length / 24;\",\n    \"  return { clip: fs.readFileSync(mp4Path).toString('base64'), duration: dur };\",\n    \"}\",\n    \"\",\n    \"async function main() {\",\n    \"  const clips = [];\",\n    \"  const durations = [];\",\n    \"  for (let i = 0; i < images.length; i++) {\",\n    \"    process.stderr.write('Clip ' + (i+1) + '/' + images.length + ' (' + Math.round(timeLeft()/1000) + 's left)\\\\n');\",\n    \"    const result = await animateImage(images[i], motionPrompts[i], i);\",\n    \"    clips.push(result.clip);\",\n    \"    durations.push(result.duration);\",\n    \"    process.stderr.write('  Done: ' + result.duration.toFixed(2) + 's\\\\n');\",\n    \"  }\",\n    \"  process.stdout.write(JSON.stringify({ clips, durations }));\",\n    \"}\",\n    \"main().catch(e => { process.stderr.write('FATAL: ' + e.message + '\\\\n'); process.exit(1); });\"\n  ];\n\n  fs.writeFileSync(path.join(tmpDir, 'animate.js'), script.join('\\n'));\n\n  const output = await new Promise((resolve, reject) => {\n    exec(\n      `node \"${path.join(tmpDir, 'animate.js')}\" \"${tmpDir}\"`,\n      { timeout: 9600000, maxBuffer: 500 * 1024 * 1024 },\n      (error, stdout, stderr) => {\n        if (error) {\n          const fm = (stderr||'').match(/FATAL: ([\\s\\S]+)/);\n          const tail = (stderr||'').split('\\n').filter(l=>l.trim()).slice(-5).join(' | ');\n          reject(new Error(fm ? fm[1].trim() : tail || error.message));\n        } else {\n          resolve(stdout);\n        }\n      }\n    );\n  });\n\n  const result = JSON.parse(output);\n\n  return {\n    json: {\n      videoClipBase64Array: result.clips,\n      clipCount: result.clips.length,\n      clipDurations: result.durations,\n      script: imgData.script,\n      title: imgData.title,\n      description: imgData.description,\n      tags: imgData.tags\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(e) {}\n}"
+      },
+      "id": "animateImages",
+      "name": "Animate Images (ComfyUI Hunyuan)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1504, 0]
     },
     {
       "parameters": {
@@ -153,31 +130,26 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Read this as an engaging, energetic tech news narrator with clear pronunciation: ' + $('Parse Script JSON').first().json.script }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } } }) }}",
-        "options": {
-          "timeout": 30000
-        }
+        "options": { "timeout": 30000 }
       },
       "id": "voiceover",
       "name": "Generate Voiceover (Gemini TTS)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        1504,
-        0
-      ]
+      "position": [1808, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
-        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\n// Get image data from Generate Images (FLUX)\nconst imageData = $('Generate Images (FLUX)').first().json;\nconst images = imageData.imageBase64Array || [];\nif (images.length === 0) throw new Error('No images found from Generate Images');\n\n// Get audio data from Gemini TTS response\nconst ttsResponse = $input.first().json;\nlet audioBase64 = '';\ntry {\n  audioBase64 = ttsResponse.candidates[0].content.parts[0].inlineData.data;\n} catch (e) {\n  throw new Error('Could not extract audio from Gemini TTS response: ' + JSON.stringify(ttsResponse).substring(0, 300));\n}\n\n// Create temp directory\nconst tmpDir = '/tmp/n8n_video_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  // Write images to temp files\n  const imgPaths = [];\n  for (let i = 0; i < images.length; i++) {\n    const imgPath = path.join(tmpDir, `img_${i}.png`);\n    fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));\n    imgPaths.push(imgPath);\n  }\n\n  // Write audio PCM and convert to WAV (Gemini TTS: 24kHz, 16-bit, mono)\n  const pcmPath = path.join(tmpDir, 'audio.pcm');\n  const wavPath = path.join(tmpDir, 'audio.wav');\n  fs.writeFileSync(pcmPath, Buffer.from(audioBase64, 'base64'));\n  execSync(`ffmpeg -y -f s16le -ar 24000 -ac 1 -i \"${pcmPath}\" \"${wavPath}\"`, { timeout: 30000 });\n\n  // Get audio duration\n  const probeOutput = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 \"${wavPath}\"`).toString().trim();\n  const totalDuration = parseFloat(probeOutput) || 45;\n\n  const numImages = images.length;\n  const fadeDuration = 0.5;\n  const imgDuration = (totalDuration + (numImages - 1) * fadeDuration) / numImages;\n  const fps = 30;\n  const frames = Math.ceil(imgDuration * fps);\n\n  // Build FFmpeg inputs\n  let inputArgs = '';\n  for (let i = 0; i < numImages; i++) {\n    inputArgs += ` -loop 1 -t ${imgDuration.toFixed(2)} -i \"${imgPaths[i]}\"`;\n  }\n  inputArgs += ` -i \"${wavPath}\"`;\n\n  // Build filter: scale + Ken Burns zoom for each image\n  const filterParts = [];\n  for (let i = 0; i < numImages; i++) {\n    const zoomIn = i % 2 === 0;\n    const zoomExpr = zoomIn ? \"min(zoom+0.0015,1.4)\" : \"if(eq(on,1),1.4,max(zoom-0.0015,1.0))\";\n    filterParts.push(\n      `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +\n      `zoompan=z='${zoomExpr}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +\n      `s=1080x1920:fps=${fps}[v${i}]`\n    );\n  }\n\n  // Build xfade chain\n  const xfadeParts = [];\n  let lastLabel = 'v0';\n  for (let i = 1; i < numImages; i++) {\n    const offset = (imgDuration * i - fadeDuration * i).toFixed(2);\n    const outLabel = i < numImages - 1 ? `t${i}` : 'vout';\n    xfadeParts.push(`[${lastLabel}][v${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${offset}[${outLabel}]`);\n    lastLabel = outLabel;\n  }\n\n  const fullFilter = filterParts.join('; ') + '; ' + xfadeParts.join('; ');\n  const outputPath = path.join(tmpDir, 'output.mp4');\n\n  const cmd = `ffmpeg${inputArgs} -filter_complex \"${fullFilter}\" -map \"[vout]\" -map ${numImages}:a ` +\n    `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -y \"${outputPath}\"`;\n\n  execSync(cmd, { maxBuffer: 200 * 1024 * 1024, timeout: 300000 });\n\n  // Read output video and return as binary\n  const videoBuffer = fs.readFileSync(outputPath);\n\n  return {\n    json: {\n      videoGenerated: true,\n      duration: totalDuration,\n      numImages: numImages\n    },\n    binary: {\n      video: {\n        data: videoBuffer.toString('base64'),\n        mimeType: 'video/mp4',\n        fileName: 'youtube_short.mp4'\n      }\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}\n}"
+        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst animData = $('Animate Images (ComfyUI Hunyuan)').first().json;\nconst clips = animData.videoClipBase64Array || [];\nconst clipDurations = animData.clipDurations || [];\nif (clips.length === 0) throw new Error('No video clips found from Animate Images');\n\nconst ttsResponse = $input.first().json;\nlet audioBase64 = '';\ntry {\n  audioBase64 = ttsResponse.candidates[0].content.parts[0].inlineData.data;\n} catch (e) {\n  throw new Error('Could not extract audio from Gemini TTS response: ' + JSON.stringify(ttsResponse).substring(0, 300));\n}\n\nconst tmpDir = '/tmp/n8n_compose_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\ntry {\n  const clipPaths = [];\n  for (let i = 0; i < clips.length; i++) {\n    const clipPath = path.join(tmpDir, `clip_${i}.mp4`);\n    fs.writeFileSync(clipPath, Buffer.from(clips[i], 'base64'));\n    clipPaths.push(clipPath);\n  }\n\n  const pcmPath = path.join(tmpDir, 'audio.pcm');\n  const wavPath = path.join(tmpDir, 'audio.wav');\n  fs.writeFileSync(pcmPath, Buffer.from(audioBase64, 'base64'));\n  execSync(`ffmpeg -y -f s16le -ar 24000 -ac 1 -i \"${pcmPath}\" \"${wavPath}\"`, { timeout: 30000 });\n\n  let audioDuration = 45;\n  try {\n    const info = execSync(`ffmpeg -i \"${wavPath}\" 2>&1 || true`, { timeout: 10000 }).toString();\n    const m = info.match(/Duration: (\\d+):(\\d+):([\\d.]+)/);\n    if (m) audioDuration = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);\n  } catch(e) {}\n\n  const numClips = clips.length;\n  const fadeDuration = 0.3;\n  const targetClipDuration = (audioDuration + (numClips - 1) * fadeDuration) / numClips;\n\n  // PASS 1: per-clip — minterpolate at native fps, then slow down, save intermediate\n  const procPaths = [];\n  for (let i = 0; i < numClips; i++) {\n    const origDur = clipDurations[i] || 2.04;\n    const speedFactor = origDur / targetClipDuration;\n    const procPath = path.join(tmpDir, `proc_${i}.mp4`);\n    const filter = [\n      `scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos`,\n      `crop=1080:1920`,\n      `unsharp=luma_msize_x=3:luma_msize_y=3:luma_amount=0.8`,\n      `eq=contrast=1.02:saturation=1.1`,\n      `minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`,\n      `setpts=PTS/${speedFactor.toFixed(4)}`,\n      `trim=duration=${(targetClipDuration + 0.05).toFixed(2)}`,\n      `setpts=PTS-STARTPTS`,\n      `fps=30`\n    ].join(',');\n    execSync(\n      `ffmpeg -y -i \"${clipPaths[i]}\" -vf \"${filter}\" -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p \"${procPath}\"`,\n      { maxBuffer: 100 * 1024 * 1024, timeout: 300000 }\n    );\n    procPaths.push(procPath);\n  }\n\n  // PASS 2: xfade stitch\n  const inputArgs = procPaths.map(p => `-i \"${p}\"`).join(' ') + ` -i \"${wavPath}\"`;\n  const xfadeParts = [];\n  let lastLabel = '0:v';\n  let offset = targetClipDuration - fadeDuration;\n  for (let i = 1; i < numClips; i++) {\n    const outLabel = i < numClips - 1 ? `t${i}` : 'vout';\n    xfadeParts.push(\n      `[${lastLabel}][${i}:v]xfade=transition=fade:duration=${fadeDuration}:offset=${offset.toFixed(2)}[${outLabel}]`\n    );\n    lastLabel = outLabel;\n    offset += targetClipDuration - fadeDuration;\n  }\n\n  const outputPath = path.join(tmpDir, 'output.mp4');\n  const cmd = `ffmpeg ${inputArgs} -filter_complex \"${xfadeParts.join('; ')}\" -map \"[vout]\" -map ${numClips}:a ` +\n    `-c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest -y \"${outputPath}\"`;\n  execSync(cmd, { maxBuffer: 500 * 1024 * 1024, timeout: 600000 });\n\n  const videoBuffer = fs.readFileSync(outputPath);\n  return {\n    json: { videoGenerated: true, duration: audioDuration, numClips, targetClipDuration },\n    binary: {\n      video: {\n        data: videoBuffer.toString('base64'),\n        mimeType: 'video/mp4',\n        fileName: 'youtube_short.mp4'\n      }\n    }\n  };\n} finally {\n  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(e) {}\n}"
       },
       "id": "composeVideo",
       "name": "Compose Video (FFmpeg)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1808,
-        0
-      ]
+      "position": [2112, 0]
     },
     {
       "parameters": {
@@ -187,10 +159,7 @@
       "name": "Prepare YouTube Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        2112,
-        0
-      ]
+      "position": [2416, 0]
     },
     {
       "parameters": {
@@ -203,7 +172,7 @@
         "options": {
           "description": "={{ $json.description }}",
           "notifySubscribers": true,
-          "privacyStatus": "public",
+          "privacyStatus": "unlisted",
           "selfDeclaredMadeForKids": false,
           "tags": "={{ $json.tags.join(',') }}"
         }
@@ -212,10 +181,13 @@
       "name": "Upload to YouTube",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [
-        2384,
-        0
-      ]
+      "position": [2688, 0],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "",
+          "name": "YouTube account"
+        }
+      }
     },
     {
       "parameters": {
@@ -228,184 +200,50 @@
       "name": "Add to Playlist",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [
-        2592,
-        0
-      ]
+      "position": [2896, 0],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "",
+          "name": "YouTube account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const videoData = $input.first().json;\nconst videoId = videoData.uploadId || videoData.id || videoData.videoId || 'unknown';\nconst videoUrl = `https://youtube.com/shorts/${videoId}`;\n\nreturn {\n  json: {\n    success: true,\n    message: `YouTube Short published successfully!`,\n    videoUrl: videoUrl,\n    videoId: videoId,\n    title: videoData.snippet?.title || videoData.title || '',\n    uploadTime: new Date().toISOString()\n  }\n};"
+        "jsCode": "const playlistItem = $input.first().json;\nconst videoId = playlistItem.contentDetails?.videoId ||\n                playlistItem.snippet?.resourceId?.videoId ||\n                'unknown';\nconst videoUrl = `https://youtube.com/shorts/${videoId}`;\nconst title = playlistItem.snippet?.title || '';\n\nreturn {\n  json: {\n    success: true,\n    message: 'YouTube Short published successfully!',\n    videoUrl: videoUrl,\n    videoId: videoId,\n    title: title,\n    uploadTime: new Date().toISOString()\n  }\n};"
       },
       "id": "successOutput",
       "name": "Success Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        2800,
-        0
-      ]
+      "position": [3104, 0]
     }
   ],
   "connections": {
-    "Manual Trigger": {
-      "main": [
-        [
-          {
-            "node": "Fetch Reddit Posts",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Reddit Posts": {
-      "main": [
-        [
-          {
-            "node": "Format Reddit Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format Reddit Data": {
-      "main": [
-        [
-          {
-            "node": "Fetch HN Posts",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch HN Posts": {
-      "main": [
-        [
-          {
-            "node": "Pick Best Story",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick Best Story": {
-      "main": [
-        [
-          {
-            "node": "Prepare Story Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Story Data": {
-      "main": [
-        [
-          {
-            "node": "Generate Script (Gemini)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Generate Script (Gemini)": {
-      "main": [
-        [
-          {
-            "node": "Parse Script JSON",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse Script JSON": {
-      "main": [
-        [
-          {
-            "node": "Generate Images (FLUX)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Generate Images (FLUX)": {
-      "main": [
-        [
-          {
-            "node": "Generate Voiceover (Gemini TTS)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Generate Voiceover (Gemini TTS)": {
-      "main": [
-        [
-          {
-            "node": "Compose Video (FFmpeg)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Compose Video (FFmpeg)": {
-      "main": [
-        [
-          {
-            "node": "Prepare YouTube Metadata",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare YouTube Metadata": {
-      "main": [
-        [
-          {
-            "node": "Upload to YouTube",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upload to YouTube": {
-      "main": [
-        [
-          {
-            "node": "Add to Playlist",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Add to Playlist": {
-      "main": [
-        [
-          {
-            "node": "Success Output",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Manual Trigger": { "main": [[{ "node": "Fetch Reddit Posts", "type": "main", "index": 0 }]] },
+    "Fetch Reddit Posts": { "main": [[{ "node": "Format Reddit Data", "type": "main", "index": 0 }]] },
+    "Format Reddit Data": { "main": [[{ "node": "Fetch HN Posts", "type": "main", "index": 0 }]] },
+    "Fetch HN Posts": { "main": [[{ "node": "Pick Best Story", "type": "main", "index": 0 }]] },
+    "Pick Best Story": { "main": [[{ "node": "Prepare Story Data", "type": "main", "index": 0 }]] },
+    "Prepare Story Data": { "main": [[{ "node": "Generate Script (Gemini)", "type": "main", "index": 0 }]] },
+    "Generate Script (Gemini)": { "main": [[{ "node": "Parse Script JSON", "type": "main", "index": 0 }]] },
+    "Parse Script JSON": { "main": [[{ "node": "Generate Images (ComfyUI SDXL)", "type": "main", "index": 0 }]] },
+    "Generate Images (ComfyUI SDXL)": { "main": [[{ "node": "Animate Images (ComfyUI Hunyuan)", "type": "main", "index": 0 }]] },
+    "Animate Images (ComfyUI Hunyuan)": { "main": [[{ "node": "Generate Voiceover (Gemini TTS)", "type": "main", "index": 0 }]] },
+    "Generate Voiceover (Gemini TTS)": { "main": [[{ "node": "Compose Video (FFmpeg)", "type": "main", "index": 0 }]] },
+    "Compose Video (FFmpeg)": { "main": [[{ "node": "Prepare YouTube Metadata", "type": "main", "index": 0 }]] },
+    "Prepare YouTube Metadata": { "main": [[{ "node": "Upload to YouTube", "type": "main", "index": 0 }]] },
+    "Upload to YouTube": { "main": [[{ "node": "Add to Playlist", "type": "main", "index": 0 }]] },
+    "Add to Playlist": { "main": [[{ "node": "Success Output", "type": "main", "index": 0 }]] }
   },
   "settings": {
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
-  }
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {}
 }

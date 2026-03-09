@@ -5,23 +5,32 @@
 - Google AI Studio API key (free) — [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - Google account with a YouTube channel
 - Docker with FFmpeg support (see Step 1)
+- **ComfyUI** running on Windows host with SDXL base 1.0 + HunyuanVideo I2V models (see [comfyui/README.md](../comfyui/README.md))
+- **NVIDIA GPU** with 8GB+ VRAM (e.g., RTX 3070 Ti)
 
 ---
 
 ## Step 1: Start n8n with Docker Compose
 
-The workflow uses FFmpeg to compose video locally. The parent directory contains a `Dockerfile` and `docker-compose.yml` that build a custom n8n image with FFmpeg baked in.
+The workflow uses FFmpeg to compose video locally. The `D:\N8n\` directory contains a `Dockerfile` and `docker-compose.yml` that build a custom n8n image with FFmpeg baked in.
 
 ```bash
-cd /path/to/n8n   # parent directory containing Dockerfile + docker-compose.yml
+cd D:\N8n
+
+# First time only — build the custom image with FFmpeg:
+docker compose build
+
+# Start n8n:
 docker compose up -d
 ```
 
 This automatically:
 - Builds a custom image with FFmpeg + ffprobe pre-installed
 - Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition)
-- Mounts the current directory as n8n data volume
-- Auto-restarts with Docker Desktop
+- Sets task timeout to 9000s (150 min for ComfyUI generation)
+- Adds `host.docker.internal` so Docker can reach ComfyUI on the Windows host
+- Mounts the ComfyUI workflow templates as read-only
+- Auto-restarts with Docker Desktop (`restart: always`)
 
 Open [http://localhost:5678](http://localhost:5678) and create an account when prompted.
 
@@ -59,49 +68,59 @@ Should return a list of available Gemini models.
 ### Free Tier Limits (as of Feb 2026)
 | Model | Limit |
 |---|---|
-| Gemini 2.5 Flash (script) | 5 RPM |
-| Gemini 2.5 Flash TTS (voiceover) | 10 RPM |
+| Gemini 3 Flash (script) | 5 RPM |
+| Gemini 3 Flash TTS (voiceover) | 10 RPM |
 
 These limits are sufficient for 1 script + 1 voiceover per run.
 
 ---
 
-## Image Generation API Keys (Optional but Recommended)
+## ComfyUI Setup (Local AI Image + Video Generation)
 
-The workflow uses a 3-provider fallback stack for image generation. All providers are free. Keys are hardcoded directly in the Generate Images Code node (same approach as the Gemini API key in URL parameters).
+The workflow uses ComfyUI running on the Windows host for all image and video generation. No cloud APIs needed.
 
-### Provider 1: Pollinations.ai (Primary — AI-Generated Images)
+### What ComfyUI Does
 
-**Used for**: AI-generated images via FLUX model on `gen.pollinations.ai` (10-20 seconds per image)
+| Stage | Model | Output | Time per item |
+|-------|-------|--------|--------------|
+| Image generation | SDXL base 1.0 | 768x1344 PNG | ~35-45s |
+| Video animation | HunyuanVideo I2V Q4 GGUF | 544x960, 49 frames at 24fps | ~8-12 min |
 
-1. Sign up at [auth.pollinations.ai](https://auth.pollinations.ai/)
-2. Get your secret key from [enter.pollinations.ai](https://enter.pollinations.ai/)
-3. Copy the `sk_...` key
-4. In n8n, open the **"Generate Images (FLUX)"** node and replace the `pollinationsKey` value in the config object
+### Setup
 
-**Free tier**: Unlimited requests with secret key (no rate limits). Without key, limited to 1 request per 15 seconds.
+Follow the full setup guide in [comfyui/README.md](../comfyui/README.md). Summary:
 
-### Provider 2: Pexels (Fallback — Stock Photos)
+1. **Install ComfyUI** — Download portable from [GitHub releases](https://github.com/Comfy-Org/ComfyUI/releases), extract to `C:\ComfyUI`
+2. **Install custom nodes** — Run `comfyui\setup\install-custom-nodes.ps1` (GGUF loader for HunyuanVideo)
+3. **Download models** (~24GB) — Run `comfyui\setup\install-models.ps1` (requires `pip install huggingface-hub`)
+4. **Start ComfyUI** — Run `comfyui\setup\run_api_server.bat`
+5. **Windows Firewall** — Allow port 8188 for Docker access:
+   ```powershell
+   New-NetFirewallRule -DisplayName "ComfyUI API" -Direction Inbound -Protocol TCP -LocalPort 8188 -Action Allow
+   ```
 
-**Used for**: High-quality stock photos when AI generation is unavailable
+### Verify ComfyUI is Running
 
-1. Sign up at [pexels.com/api](https://www.pexels.com/api/) (instant approval)
-2. Copy your API key from the dashboard
-3. In n8n, open the **"Generate Images (FLUX)"** node and replace the `pexelsKey` value in the config object
+```bash
+curl http://localhost:8188/system_stats
+```
+Should return JSON with GPU info.
 
-**Free tier**: 200 requests/hour (more than enough for 8 images per video).
+### How n8n Connects to ComfyUI
 
-### Provider 3: FFmpeg Gradient (Always Available)
+- n8n runs in Docker, ComfyUI runs on the Windows host
+- Docker reaches ComfyUI via `http://host.docker.internal:8188`
+- `docker-compose.yml` must have `extra_hosts: ["host.docker.internal:host-gateway"]`
+- The `COMFYUI_URL` env var is set in `.env` (default: `http://host.docker.internal:8188`)
 
-**Used for**: Solid-color gradient backgrounds as a last resort. No API key needed — uses local FFmpeg.
+### VRAM Budget (RTX 3070 Ti 8GB)
 
-### How It Works
+| Phase | Peak VRAM | Notes |
+|-------|-----------|-------|
+| SDXL base 1.0 image gen | ~5-6 GB | Fits on 8GB VRAM without special flags |
+| HunyuanVideo I2V | ~7-8 GB | GGUF offloads weights to 32GB system RAM |
 
-The Generate Images node tries providers in order: Pollinations.ai → Pexels → FFmpeg gradient. If a provider's key is missing or the request fails, it automatically tries the next one. The workflow **never fails** on image generation.
-
-### Why Hardcoded?
-
-n8n's Code node sandbox does not expose `process.env`, and the task runner strips environment variables from child processes. Hardcoding keys in the Code node is the only reliable approach (same pattern as the Gemini API key in URL parameters).
+Models are loaded/unloaded sequentially — they cannot coexist in VRAM. ComfyUI handles the swap automatically (~30-60s between phases).
 
 ---
 
@@ -215,16 +234,18 @@ If you don't want videos added to a playlist:
 4. Save
 
 ### Run the workflow
-1. Click **"Test Workflow"** (play button in top-right)
-2. Wait 3-5 minutes for full execution
-3. Watch the execution progress — each node lights up green when done
+1. Make sure **ComfyUI is running** (`curl http://localhost:8188/system_stats`)
+2. Click **"Test Workflow"** (play button in top-right)
+3. Wait **80-110 minutes** for full execution (most time is HunyuanVideo I2V clips)
+4. Watch the execution progress — each node lights up green when done
 
 ### Verify
 - [ ] Reddit and HN data were fetched successfully
-- [ ] Gemini 2.5 Flash picked a story and generated a script with ~90 words + 8 image prompts
-- [ ] 8 vertical images were generated by Pollinations.ai / Pexels (768x1344, base64)
-- [ ] Voiceover audio was created by Gemini 2.5 Flash TTS
-- [ ] FFmpeg composed video with Ken Burns zoom/pan effect (~45 seconds)
+- [ ] Gemini 3 Flash picked a story and generated a script with ~120 words + 8 image prompts
+- [ ] 8 vertical images were generated by ComfyUI SDXL base 1.0 (768x1344)
+- [ ] 8 video clips were animated by ComfyUI HunyuanVideo I2V (544x960, ~2s each)
+- [ ] Voiceover audio was created by Gemini 3 Flash TTS
+- [ ] FFmpeg stitched clips + audio into 1080x1920 MP4 (~45 seconds)
 - [ ] Video appeared in your YouTube Studio as unlisted
 - [ ] Video was added to your playlist (if configured)
 
@@ -238,9 +259,8 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 | # | Credential | Type | Nodes Using It | Cost |
 |---|---|---|---|---|
 | 1 | Google AI Studio (Gemini) | API Key in URL | Script Gen, TTS | $0.00 (free tier) |
-| 2 | Pollinations.ai | Hardcoded in Code node | Generate Images | $0.00 (free) |
-| 3 | Pexels | Hardcoded in Code node | Generate Images | $0.00 (free) |
-| 4 | YouTube OAuth2 | OAuth2 | Upload to YouTube, Add to Playlist | Free |
+| 2 | ComfyUI | Local API (no auth) | Generate Images, Animate Images | $0.00 (local) |
+| 3 | YouTube OAuth2 | OAuth2 | Upload to YouTube, Add to Playlist | Free |
 
 ---
 
@@ -252,7 +272,7 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 - Check the URL: `?key=YOUR_ACTUAL_KEY` (no quotes, no spaces)
 
 ### FFmpeg "command not found"
-- Rebuild the custom image: `docker compose build && docker compose up -d`
+- Rebuild the custom image from `D:\N8n`: `docker compose build && docker compose up -d`
 - The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` and symlinks to `/usr/local/bin/`
 
 ### "Cannot require 'child_process'"
@@ -343,7 +363,7 @@ If migrating from Docker to n8n Cloud:
 
 On the new instance, you must:
 - [ ] Replace `YOUR_GEMINI_API_KEY` in 2 nodes (Generate Script, Generate Voiceover)
-- [ ] Replace image generation API keys in the Generate Images (FLUX) Code node (`pollinationsKey`, `pexelsKey`)
+- [ ] Set up ComfyUI with SDXL base 1.0 + HunyuanVideo I2V models (see `comfyui/README.md`)
 - [ ] Create and assign **YouTube OAuth2** credential (new OAuth2 client or reuse existing)
 - [ ] Update **playlist ID** in the "Add to Playlist" node (or remove the node if not needed)
 - [ ] Update the **YouTube OAuth2 redirect URI** to match the new instance URL
@@ -351,5 +371,6 @@ On the new instance, you must:
   - Cloud: `https://your-instance.app.n8n.cloud/rest/oauth2-credential/callback`
 - [ ] Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then `docker compose up -d` (or manually install FFmpeg and set env var)
 - [ ] Verify FFmpeg works: `docker exec n8n ffmpeg -version`
+- [ ] Verify ComfyUI is reachable: `curl http://localhost:8188/system_stats`
 - [ ] Test with `privacyStatus: "unlisted"` before going public
 - [ ] Verify all nodes execute successfully end-to-end

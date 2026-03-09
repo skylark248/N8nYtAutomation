@@ -39,6 +39,9 @@ node_modules/
 # Local n8n nodes
 nodes/
 
+# ComfyUI models (downloaded locally, not committed)
+comfyui/models/
+
 # Submodule build artifacts (if using local builds)
 n8n-mcp/dist/
 n8n-mcp/node_modules/
