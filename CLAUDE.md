@@ -44,7 +44,7 @@ docker compose up -d
 
 **Files** (in parent `/n8n/` directory, NOT in this repo):
 - `Dockerfile` -- extends `n8nio/n8n:latest`, installs `ffmpeg-static` + `@ffprobe-installer/ffprobe` via npm, symlinks to `/usr/local/bin/`
-- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, `N8N_RUNNERS_TASK_TIMEOUT=9000` (150 min in **seconds** — unit is seconds NOT ms; using ms value overflows 32-bit int and crashes the task runner), `N8N_RUNNERS_HEARTBEAT_INTERVAL=600` (10 min), `extra_hosts: host.docker.internal:host-gateway` (Docker→Windows ComfyUI access), mounts `comfyui/workflows` as read-only volume, `restart: unless-stopped`
+- `docker-compose.yml` -- sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, `N8N_RUNNERS_TASK_TIMEOUT=9000` (150 min in **seconds** — unit is seconds NOT ms; using ms value overflows 32-bit int and crashes the task runner), `N8N_RUNNERS_HEARTBEAT_INTERVAL=600` (10 min), `extra_hosts: host.docker.internal:host-gateway` (Docker→Windows ComfyUI access), mounts `comfyui/workflows` as read-only volume, mounts `N8nYtAutomation/videos` → `/home/node/videos` (for `exportLocal` node), `N8N_RESTRICT_FILE_ACCESS_TO` includes `/home/node/videos`, `restart: always`
 
 **Why custom image**: The official `n8nio/n8n` uses a hardened Alpine image without `apk` package manager. FFmpeg must be installed via npm global packages (`ffmpeg-static`, `@ffprobe-installer/ffprobe`) and symlinked to PATH.
 

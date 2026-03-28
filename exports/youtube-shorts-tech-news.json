@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-28T15:56:51.675Z",
+  "updatedAt": "2026-03-28T16:11:06.075Z",
   "createdAt": "2026-03-03T07:08:43.090Z",
   "id": "zuFXklAfWmiZqTZh",
   "name": "YouTube Shorts - Tech News Automation",
@@ -216,7 +216,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2416,
+        2656,
         0
       ]
     },
@@ -241,7 +241,7 @@
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
       "position": [
-        2688,
+        2928,
         0
       ],
       "credentials": {
@@ -263,7 +263,7 @@
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
       "position": [
-        2896,
+        3136,
         0
       ],
       "credentials": {
@@ -282,7 +282,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3104,
+        3344,
         0
       ]
     },
@@ -489,9 +489,9 @@
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
-  "versionId": "4f6d57d5-7708-4426-ad52-8d269bca0894",
+  "versionId": "ce9069d1-ae68-4b67-8012-29363e7e66f4",
   "activeVersionId": null,
-  "versionCounter": 33,
+  "versionCounter": 34,
   "triggerCount": 0,
   "shared": [
     {

@@ -2,7 +2,7 @@
 
 Automated pipeline that creates and publishes YouTube Shorts about trending tech/AI news — fully hands-free, completely free.
 
-**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base 1.0) → Animate images (ComfyUI HunyuanVideo I2V) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg) → Upload to YouTube → Add to playlist
+**Pipeline:** Fetch news (Reddit + Hacker News) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base 1.0) → Animate images (ComfyUI HunyuanVideo I2V) → Generate voiceover (Gemini 2.5 Flash TTS) → Compose video (FFmpeg) → **Save to `videos/` folder** (video.mp4 + upload-info.txt) → Upload to YouTube → Add to playlist
 
 **Cost:** $0.00 per video (all local AI generation + free APIs)
 
@@ -24,6 +24,8 @@ ComfyUI HunyuanVideo I2V animates each image into a video clip (544×960) — ~6
 Gemini 3 Flash TTS creates voiceover narration (PCM audio)
     ↓
 FFmpeg stitches clips + slow-stretch + crossfade + audio overlay → 1080×1920 MP4
+    ↓
+Saves video.mp4 + upload-info.txt to videos/{timestamp}_{title}/ on Windows host
     ↓
 Uploads to YouTube as a Short with full metadata
     ↓
@@ -97,7 +99,7 @@ Open [http://localhost:5678](http://localhost:5678) in your browser. Create an a
 1. In n8n, click **"Add workflow"** (or the import icon)
 2. Click **"Import from file"**
 3. Select `exports/youtube-shorts-tech-news.json` from the cloned repo
-4. The full 16-node workflow appears ready to configure
+4. The full 17-node workflow appears ready to configure
 
 ### Step 5: Add Your Gemini API Key
 
@@ -180,6 +182,11 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 ├── exports/
 │   └── youtube-shorts-tech-news.json      # Importable n8n workflow file
 │
+├── videos/                                # Auto-created by workflow after each run
+│   └── {timestamp}_{title}/               #   One folder per video
+│       ├── video.mp4                      #     Final composed Short
+│       └── upload-info.txt               #     Copy-paste upload info (YT + Instagram)
+│
 ├── CLAUDE.md                              # Claude Code AI assistant config
 ├── n8n-mcp/                               # MCP server for Claude Code (git submodule)
 └── n8n-skills/                            # Claude Code skills (git submodule)
@@ -188,6 +195,33 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 ../Dockerfile                              # Custom n8n image with FFmpeg baked in
 ../docker-compose.yml                      # One-command startup: docker compose up -d
 ```
+
+---
+
+## Manual Instagram Upload
+
+After each run, the workflow saves `upload-info.txt` inside `videos/{timestamp}_{title}/` with everything pre-formatted for Instagram.
+
+### Steps to Upload as a Reel
+
+1. **Open the video folder** — `D:\Github Clones\N8nYtAutomation\videos\{timestamp}_{title}\`
+2. **Open `upload-info.txt`** — copy the Instagram caption block (title + emoji + description + hashtags)
+3. **Open Instagram** (mobile app or desktop) → **+** → **Reel**
+4. Select `video.mp4` from your phone (AirDrop / USB transfer / cloud sync)
+5. Paste the caption from `upload-info.txt`
+6. Set **Share to Feed** → **ON**
+7. Post
+
+### Recommended Posting Frequency for New Channels (2026)
+
+| Platform | Frequency | Notes |
+|---|---|---|
+| **YouTube Shorts** | 1/day | YouTube rewards consistency; daily posting is the #1 growth lever for new Shorts channels |
+| **Instagram Reels** | 3–4×/week | Mon / Wed / Fri / Sun. Instagram's algorithm favors accounts that post consistently but not excessively. Daily can hurt reach if engagement rate drops. |
+
+> **Same video, different caption** — `upload-info.txt` has separate sections for YouTube (with `#Shorts`) and Instagram (emoji-first caption + 20 tech hashtags, no `#Shorts`). Reusing the video is fine; watermarks are not added by this pipeline.
+
+> **Best posting times (IST)**: YouTube — 9 AM or 6 PM. Instagram — 7–9 AM or 7–9 PM (when your target audience is most active).
 
 ---
 
@@ -214,7 +248,7 @@ To skip playlist integration, simply delete the "Add to Playlist" node and conne
 | Change script length | Edit "Generate Script" node — adjust word count (currently 110-120 words) |
 | Change TTS voice | Edit "Generate Voiceover" node — options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
 | Add scheduled trigger | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *` for daily 9 AM) |
-| Multi-platform posting | Add Blotato node for TikTok, Instagram Reels |
+| Instagram upload | Use `upload-info.txt` in each `videos/` subfolder — pre-formatted caption + hashtags ready to paste |
 
 See [docs/workflow-reference.md](docs/workflow-reference.md) → Modification Guide for details.
 
@@ -329,7 +363,7 @@ Models are loaded/unloaded sequentially — they cannot coexist in VRAM. ComfyUI
 ## Future Plans
 
 - Migrate to n8n Cloud with daily scheduled trigger
-- Add multi-platform posting (TikTok, Instagram Reels)
+- Automate Instagram Reels posting via Facebook Graph API (architecture already built — see git history)
 - Add thumbnail generation with text overlay
 - A/B test titles for better CTR
 - Upgrade to higher-quality video models as VRAM allows (Wan2.1, CogVideoX)

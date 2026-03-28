@@ -369,8 +369,9 @@ On the new instance, you must:
 - [ ] Update the **YouTube OAuth2 redirect URI** to match the new instance URL
   - Docker: `http://localhost:5678/rest/oauth2-credential/callback`
   - Cloud: `https://your-instance.app.n8n.cloud/rest/oauth2-credential/callback`
+- [ ] Add the `videos/` volume mount to `docker-compose.yml`: `"path/to/N8nYtAutomation/videos:/home/node/videos"` and add `/home/node/videos` to `N8N_RESTRICT_FILE_ACCESS_TO`
 - [ ] Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then `docker compose up -d` (or manually install FFmpeg and set env var)
 - [ ] Verify FFmpeg works: `docker exec n8n ffmpeg -version`
 - [ ] Verify ComfyUI is reachable: `curl http://localhost:8188/system_stats`
 - [ ] Test with `privacyStatus: "unlisted"` before going public
-- [ ] Verify all 16 nodes execute successfully end-to-end
+- [ ] Verify all 17 nodes execute successfully end-to-end
