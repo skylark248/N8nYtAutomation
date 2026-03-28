@@ -200,8 +200,8 @@ claude mcp add comfyui-mcp \
 | 7 | Generate Script (Gemini) | httpRequest | `scriptGen` | Gemini 3 Flash (`gemini-3-flash-preview`): script, title, tags, 8 image prompts |
 | 8 | Parse Script JSON | code | `parseScript` | Parse Gemini JSON, recursive findScriptData() fallback |
 | 9 | Generate Images (ComfyUI SDXL) | code | `generateImages` | SDXL base via ComfyUI API, 8x images (768x1344), ~30s each |
-| 10 | Animate Images (ComfyUI Hunyuan) | code | `animateImages` | HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960, 25 frames) |
-| 11 | Generate Voiceover (Gemini TTS) | httpRequest | `voiceover` | Gemini 3 Flash TTS, voice Kore, PCM base64 |
+| 10 | Animate Images (ComfyUI Hunyuan) | code | `animateImages` | HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960, 49 frames) |
+| 11 | Generate Voiceover (Gemini TTS) | httpRequest | `voiceover` | Gemini 2.5 Flash TTS, voice Kore, PCM base64 |
 | 12 | Compose Video (FFmpeg) | code | `composeVideo` | Stitch clips + slow-stretch + crossfade + audio, 1080x1920 MP4 |
 | 13 | Prepare YouTube Metadata | code | `prepareYT` | Append #Shorts, category 28, format tags |
 | 14 | Upload to YouTube | youTube | `youtubeUpload` | Upload video binary, privacy: public |
@@ -260,6 +260,8 @@ claude mcp add comfyui-mcp \
 
 ## Version History (recent — see docs/workflow-reference.md for full history)
 
+- **v7.1** (2026-03-28): Removed Instagram Reels cross-posting and Schedule Trigger. Back to 16 nodes, manual trigger only. YouTube-only pipeline.
+- **v7.0** (2026-03-14): Added Instagram Reels cross-posting. 16→26 nodes. Fork after `composeVideo`: Instagram branch posts 4x/week (Mon/Wed/Fri/Sun) via Facebook Resumable Upload API + Graph API. Schedule Trigger added. (Reverted in v7.1)
 - **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**
 - **v6.8** (2026-03-09): Script stays 110-120 words (~45s narration). `N8N_RUNNERS_TASK_TIMEOUT` 7200→9000 (150 min). animateImages GLOBAL_BUDGET_MS 6000000→9000000ms (150 min), exec timeout 6600000→9600000ms (160 min). Runtime: ~80-110 min.
 - **v6.7** (2026-03-09): Increased HunyuanVideo frames 25→49 (2.04s clips) for smoother slow-motion — slowdown ratio drops from 4.5x to ~2.3x, so minterpolate needs far less interpolation. Increased Gemini script target 80-95→110-120 words for ~45s narration. Added word count validation (throws if <90 words). Poll timeout raised 1200s→1800s for longer clip generation. Expected animation runtime: ~65-75 min (+28 min vs v6.6).

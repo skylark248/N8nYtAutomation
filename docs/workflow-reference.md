@@ -1,7 +1,7 @@
 # YouTube Shorts - Tech News Automation
 
 ## Overview
-- **Trigger**: Manual (click to run)
+- **Triggers**: Manual (click to run)
 - **Nodes**: 16 | **Connections**: 15
 - **Estimated Runtime**: 80-110 minutes per video (local AI generation)
 - **Monthly Cost**: $0.00 (all local AI + free APIs)
@@ -37,25 +37,25 @@ Manual Trigger
 [Generate Images (ComfyUI SDXL)] -- Code node: SDXL base 1.0 via ComfyUI API, 8x images (768x1344)
     |
     v
-[Animate Images (ComfyUI Hunyuan)] -- Code node: HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960)
+[Animate Images (ComfyUI Hunyuan)] -- Code node: HunyuanVideo I2V via ComfyUI API, 8x clips (544x960)
     |
     v
-[Generate Voiceover (Gemini TTS)] -- Gemini 3 Flash TTS: PCM audio (base64)
+[Generate Voiceover (Gemini TTS)] -- Gemini 2.5 Flash TTS: PCM audio (base64)
     |
     v
-[Compose Video (FFmpeg)] -- Code node: stitch clips + slow-stretch + crossfade + audio overlay
+[Compose Video (FFmpeg)] -- Code node: stitch + slow-stretch + crossfade + audio, 1080x1920 MP4
     |
     v
-[Prepare YouTube Metadata] -- Adds #Shorts, sets category, formats tags
+[Prepare YouTube Metadata] -- append #Shorts, category 28, format tags
     |
     v
-[Upload to YouTube] -- YouTube Data API v3
+[Upload to YouTube] -- upload video binary, privacy: public
     |
     v
-[Add to Playlist] -- Adds video to specified YouTube playlist
+[Add to Playlist] -- add video to YouTube playlist
     |
     v
-[Success Output] -- Returns video URL
+[Success Output] -- return videoUrl, videoId, uploadTime
 ```
 
 ## Node Details
@@ -385,6 +385,8 @@ Add to Playlist                        -> Success Output                        
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
+- **v7.1** (2026-03-28): Removed Instagram Reels cross-posting and Schedule Trigger. Back to 16 nodes, manual trigger only.
+- **v7.0** (2026-03-14): Added Instagram Reels cross-posting. 16→26 nodes (+10 new nodes, +10 connections). Fork after `composeVideo` — YouTube branch unchanged; Instagram branch posts 4x/week (Mon/Wed/Fri/Sun) gated by IF node. Uses Facebook Graph API Resumable Upload (no cloud storage). Same video re-used, Instagram-specific captions (emojis, 20 hashtags, no #Shorts). Schedule Trigger (9AM daily) added alongside Manual Trigger. New placeholder values: `YOUR_IG_USER_ID` + `YOUR_IG_ACCESS_TOKEN` in `prepareInsta` node.
 - **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**
 - **v6.8** (2026-03-09): Script stays 110-120 words (~45s narration). `N8N_RUNNERS_TASK_TIMEOUT` 7200→9000 (150 min). animateImages `GLOBAL_BUDGET_MS` 6000000→9000000ms (150 min), exec timeout 6600000→9600000ms (160 min). Runtime: ~80-110 min.
 - **v6.7** (2026-03-09): HunyuanVideo frames 25→49 (2.04s clips). Script 80-95→110-120 words. Word count validation (throws if <90). Poll timeout 1200s→1800s. Fixed successOutput videoId reading `contentDetails.videoId`.

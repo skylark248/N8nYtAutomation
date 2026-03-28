@@ -373,4 +373,4 @@ On the new instance, you must:
 - [ ] Verify FFmpeg works: `docker exec n8n ffmpeg -version`
 - [ ] Verify ComfyUI is reachable: `curl http://localhost:8188/system_stats`
 - [ ] Test with `privacyStatus: "unlisted"` before going public
-- [ ] Verify all nodes execute successfully end-to-end
+- [ ] Verify all 16 nodes execute successfully end-to-end
