@@ -2,7 +2,7 @@
 
 ## Overview
 - **Triggers**: Manual (click to run)
-- **Nodes**: 16 | **Connections**: 15
+- **Nodes**: 17 | **Connections**: 16
 - **Estimated Runtime**: 80-110 minutes per video (local AI generation)
 - **Monthly Cost**: $0.00 (all local AI + free APIs)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
@@ -44,6 +44,9 @@ Manual Trigger
     |
     v
 [Compose Video (FFmpeg)] -- Code node: stitch + slow-stretch + crossfade + audio, 1080x1920 MP4
+    |
+    v
+[Export Video Locally] -- Code node: save video.mp4 + upload-info.txt to videos/{timestamp}_{title}/
     |
     v
 [Prepare YouTube Metadata] -- append #Shorts, category 28, format tags
@@ -276,7 +279,31 @@ Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `fi
 
 **Estimated render time**: 30-60 seconds for stitching + audio overlay.
 
-### Node 13: Prepare YouTube Metadata
+### Node 13: Export Video Locally
+- **Type**: `n8n-nodes-base.code` (v2)
+- **ID**: `exportLocal`
+
+**Logic**:
+1. Sanitizes the video title into a safe folder name (alphanumeric + underscores, max 80 chars)
+2. Creates `videos/{timestamp}_{sanitized-title}/` on the Windows host (mounted at `/home/node/videos` in Docker)
+3. Writes `video.mp4` — the final composed 1080x1920 MP4
+4. Writes `upload-info.txt` containing:
+   - Full script (voiceover text)
+   - YouTube: title with `#Shorts`, description, comma-separated tags, hashtags, category/privacy settings
+   - Instagram: ready-to-paste caption with title + emoji + description + 20 tech hashtags
+5. Passes binary + all JSON data through unchanged
+
+**Output folder structure**:
+```
+videos/
+└── 2026-03-28T09-00-00_OpenAI_Announces_GPT6/
+    ├── video.mp4         ← final composed video
+    └── upload-info.txt   ← copy-paste ready upload info for YouTube + Instagram
+```
+
+**Requires**: `D:\N8n\docker-compose.yml` volume mount `d:/Github Clones/N8nYtAutomation/videos:/home/node/videos` and `docker compose restart`.
+
+### Node 14: Prepare YouTube Metadata
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `prepareYT`
 
@@ -385,6 +412,7 @@ Add to Playlist                        -> Success Output                        
 | Multi-platform posting | Add Blotato node after YouTube upload |
 
 ## Version History
+- **v7.2** (2026-03-28): Added `exportLocal` node (17 nodes). Saves `video.mp4` + `upload-info.txt` to `videos/{timestamp}_{title}/` after every run. Requires volume mount in `D:\N8n\docker-compose.yml` + `docker compose restart`.
 - **v7.1** (2026-03-28): Removed Instagram Reels cross-posting and Schedule Trigger. Back to 16 nodes, manual trigger only.
 - **v7.0** (2026-03-14): Added Instagram Reels cross-posting. 16→26 nodes (+10 new nodes, +10 connections). Fork after `composeVideo` — YouTube branch unchanged; Instagram branch posts 4x/week (Mon/Wed/Fri/Sun) gated by IF node. Uses Facebook Graph API Resumable Upload (no cloud storage). Same video re-used, Instagram-specific captions (emojis, 20 hashtags, no #Shorts). Schedule Trigger (9AM daily) added alongside Manual Trigger. New placeholder values: `YOUR_IG_USER_ID` + `YOUR_IG_ACCESS_TOKEN` in `prepareInsta` node.
 - **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**

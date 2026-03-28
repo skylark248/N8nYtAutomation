@@ -1,0 +1,3 @@
+# Ignore all video folders (auto-created by workflow)
+*
+!.gitignore

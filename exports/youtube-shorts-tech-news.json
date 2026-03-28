@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-28T15:33:30.572Z",
+  "updatedAt": "2026-03-28T15:56:51.675Z",
   "createdAt": "2026-03-03T07:08:43.090Z",
   "id": "zuFXklAfWmiZqTZh",
   "name": "YouTube Shorts - Tech News Automation",
@@ -285,6 +285,20 @@
         3104,
         0
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst item = $input.first();\nconst binary = item.binary;\nconst data = item.json;\n\n// Pull metadata — comes from animateImages node output\nconst title = data.title || 'Untitled';\nconst script = data.script || '';\nconst description = data.description || '';\nconst tags = data.tags || [];\n\n// Sanitize title for folder name: keep alphanumeric, spaces→underscores, limit length\nconst sanitized = title\n  .replace(/[^a-zA-Z0-9 _-]/g, '')\n  .trim()\n  .replace(/\\s+/g, '_')\n  .substring(0, 80);\n\nconst timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);\nconst folderName = timestamp + '_' + sanitized;\nconst basePath = '/home/node/videos/' + folderName;\n\nfs.mkdirSync(basePath, { recursive: true });\n\n// Write video file\nconst videoBuffer = Buffer.from(binary.video.data, 'base64');\nfs.writeFileSync(path.join(basePath, 'video.mp4'), videoBuffer);\n\n// Build YouTube hashtags from tags\nconst ytHashtags = (Array.isArray(tags) ? tags : []).map(t => '#' + t.replace(/[^a-zA-Z0-9]/g, '')).join(' ');\n\n// Build Instagram caption (no #Shorts, add emojis + tech hashtags)\nconst instaHashtags = [\n  '#TechNews', '#AI', '#Technology', '#Innovation', '#Tech',\n  '#MachineLearning', '#ArtificialIntelligence', '#Future', '#Science',\n  '#Programming', '#Software', '#Digital', '#NewTech', '#TechTrends',\n  '#Startup', '#Engineering', '#DataScience', '#Robotics', '#CloudComputing',\n  '#Cybersecurity'\n].join(' ');\n\nconst cleanTitle = title.replace(/#Shorts/gi, '').trim();\nconst ytTitle = cleanTitle + ' #Shorts';\n\nconst infoLines = [\n  '═══════════════════════════════════════',\n  '  VIDEO UPLOAD INFO',\n  '═══════════════════════════════════════',\n  '',\n  'Generated: ' + new Date().toISOString(),\n  'Folder:    ' + folderName,\n  '',\n  '───────────────────────────────────────',\n  '  SCRIPT (voiceover text)',\n  '───────────────────────────────────────',\n  script,\n  '',\n  '───────────────────────────────────────',\n  '  YOUTUBE UPLOAD',\n  '───────────────────────────────────────',\n  'Title:',\n  ytTitle,\n  '',\n  'Description:',\n  description,\n  '',\n  'Tags (comma-separated):',\n  (Array.isArray(tags) ? tags : []).join(', '),\n  '',\n  'Hashtags (add to description):',\n  ytHashtags,\n  '',\n  'Category: Science & Technology (ID 28)',\n  'Privacy:  Public (change to Unlisted for testing)',\n  'Made for kids: No',\n  '',\n  '───────────────────────────────────────',\n  '  INSTAGRAM REELS UPLOAD',\n  '───────────────────────────────────────',\n  'Caption (copy-paste entire block below):',\n  '---',\n  cleanTitle + ' \\uD83D\\uDD25',\n  '',\n  description.split('\\n')[0],\n  '',\n  instaHashtags,\n  '---',\n  '',\n  'Share as: Reels',\n  'Cover frame: first frame or custom thumbnail',\n  '',\n  '═══════════════════════════════════════',\n];\n\nfs.writeFileSync(path.join(basePath, 'upload-info.txt'), infoLines.join('\\n'), 'utf8');\n\nreturn {\n  json: { ...data, exportFolder: folderName, exportPath: basePath },\n  binary: binary\n};",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "exportLocal",
+      "name": "Export Video Locally",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        0
+      ]
     }
   ],
   "connections": {
@@ -413,7 +427,7 @@
       "main": [
         [
           {
-            "node": "Prepare YouTube Metadata",
+            "node": "Export Video Locally",
             "type": "main",
             "index": 0
           }
@@ -452,6 +466,17 @@
           }
         ]
       ]
+    },
+    "Export Video Locally": {
+      "main": [
+        [
+          {
+            "node": "Prepare YouTube Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -464,9 +489,9 @@
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
-  "versionId": "d05d4af4-0ead-47c3-a860-7fdfae78d85d",
+  "versionId": "4f6d57d5-7708-4426-ad52-8d269bca0894",
   "activeVersionId": null,
-  "versionCounter": 32,
+  "versionCounter": 33,
   "triggerCount": 0,
   "shared": [
     {

@@ -164,13 +164,13 @@ claude mcp add comfyui-mcp \
 ### YouTube Shorts - Tech News Automation
 - **Status**: Inactive (manual trigger)
 - **n8n Workflow ID**: `zuFXklAfWmiZqTZh`
-- **Nodes**: 16 | **Connections**: 15
+- **Nodes**: 17 | **Connections**: 16
 - **Estimated Runtime**: 80-110 minutes per video (local AI generation) | **Monthly Cost**: $0.00
 - **Export File**: `exports/youtube-shorts-tech-news.json`
 - **Documentation**: `docs/workflow-reference.md` (full node-by-node breakdown)
 - **Setup Guide**: `docs/setup-guide.md` (credential configuration)
 
-**Pipeline**: Fetch news (Reddit + HN) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base) → Animate images (ComfyUI HunyuanVideo I2V 49 frames) → Voiceover (Gemini 2.5 Flash TTS Preview) → Compose video (FFmpeg stitch + audio) → Upload to YouTube (public) → Add to playlist
+**Pipeline**: Fetch news (Reddit + HN) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base) → Animate images (ComfyUI HunyuanVideo I2V 49 frames) → Voiceover (Gemini 2.5 Flash TTS Preview) → Compose video (FFmpeg stitch + audio) → **Export video locally** (video.mp4 + upload-info.txt to `videos/{timestamp}_{title}/`) → Upload to YouTube (public) → Add to playlist
 
 **Required Credentials** (configure in n8n before running):
 1. **Google AI Studio API Key** - Gemini script + TTS (passed in URL query params, no n8n credential needed)
@@ -187,7 +187,7 @@ claude mcp add comfyui-mcp \
 - **CLIP-L** (shared): `models\clip\clip_l.safetensors` (~235MB)
 - See `comfyui/README.md` for full setup instructions
 
-### Node List (16 nodes)
+### Node List (17 nodes)
 
 | # | Node Name | Type | ID | Purpose |
 |---|---|---|---|---|
@@ -203,10 +203,11 @@ claude mcp add comfyui-mcp \
 | 10 | Animate Images (ComfyUI Hunyuan) | code | `animateImages` | HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960, 49 frames) |
 | 11 | Generate Voiceover (Gemini TTS) | httpRequest | `voiceover` | Gemini 2.5 Flash TTS, voice Kore, PCM base64 |
 | 12 | Compose Video (FFmpeg) | code | `composeVideo` | Stitch clips + slow-stretch + crossfade + audio, 1080x1920 MP4 |
-| 13 | Prepare YouTube Metadata | code | `prepareYT` | Append #Shorts, category 28, format tags |
-| 14 | Upload to YouTube | youTube | `youtubeUpload` | Upload video binary, privacy: public |
-| 15 | Add to Playlist | youTube | `addToPlaylist` | Add video to YouTube playlist |
-| 16 | Success Output | code | `successOutput` | Return videoUrl, videoId, uploadTime |
+| 13 | Export Video Locally | code | `exportLocal` | Save video.mp4 + upload-info.txt to `videos/{timestamp}_{title}/` on host |
+| 14 | Prepare YouTube Metadata | code | `prepareYT` | Append #Shorts, category 28, format tags |
+| 15 | Upload to YouTube | youTube | `youtubeUpload` | Upload video binary, privacy: public |
+| 16 | Add to Playlist | youTube | `addToPlaylist` | Add video to YouTube playlist |
+| 17 | Success Output | code | `successOutput` | Return videoUrl, videoId, uploadTime |
 
 ### Placeholder Values to Configure
 
@@ -260,6 +261,7 @@ claude mcp add comfyui-mcp \
 
 ## Version History (recent — see docs/workflow-reference.md for full history)
 
+- **v7.2** (2026-03-28): Added local video export. New `exportLocal` node (17 nodes) saves `video.mp4` + `upload-info.txt` to `videos/{timestamp}_{title}/` on Windows host after each run. Requires `D:\N8n\docker-compose.yml` volume mount + `docker compose restart`.
 - **v7.1** (2026-03-28): Removed Instagram Reels cross-posting and Schedule Trigger. Back to 16 nodes, manual trigger only. YouTube-only pipeline.
 - **v7.0** (2026-03-14): Added Instagram Reels cross-posting. 16→26 nodes. Fork after `composeVideo`: Instagram branch posts 4x/week (Mon/Wed/Fri/Sun) via Facebook Resumable Upload API + Graph API. Schedule Trigger added. (Reverted in v7.1)
 - **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**
