@@ -1,12 +1,10 @@
-# YouTube Shorts Workflow - Complete Setup Guide
+# YouTube Shorts Workflow - Complete Setup Guide (v8.4)
 
 ## Prerequisites
 - n8n running locally in Docker at http://localhost:5678
-- Google AI Studio API key (free) — [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 - Google account with a YouTube channel
 - Docker with FFmpeg support (see Step 1)
-- **ComfyUI** running on Windows host with SDXL base 1.0 + HunyuanVideo I2V models (see [comfyui/README.md](../comfyui/README.md))
-- **NVIDIA GPU** with 8GB+ VRAM (e.g., RTX 3070 Ti)
+- API accounts for cloud AI services (fal.ai, ElevenLabs — free tiers available for testing)
 
 ---
 
@@ -26,138 +24,183 @@ docker compose up -d
 
 This automatically:
 - Builds a custom image with FFmpeg + ffprobe pre-installed
-- Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition)
-- Sets task timeout to 9000s (150 min for ComfyUI generation)
-- Adds `host.docker.internal` so Docker can reach ComfyUI on the Windows host
-- Mounts the ComfyUI workflow templates as read-only
+- Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition and sandbox-escape HTTP calls)
+- Sets task timeout to 9000s (150 min)
+- Mounts `D:\Github Clones\N8nYtAutomation\videos` → `/home/node/videos` (for local export)
+- Mounts `D:\Github Clones\N8nYtAutomation\keys.json` → `/home/node/keys.json:ro` (API keys)
 - Auto-restarts with Docker Desktop (`restart: always`)
 
 Open [http://localhost:5678](http://localhost:5678) and create an account when prompted.
 
-> **Note**: The official `n8nio/n8n` image uses a hardened Alpine without `apk`. The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` instead.
+---
+
+## Step 2: Create keys.json
+
+All API keys are stored in `keys.json` at the repo root (gitignored — never committed). This file is mounted read-only into Docker at `/home/node/keys.json`.
+
+Create the file at `D:\Github Clones\N8nYtAutomation\keys.json`:
+
+```json
+{
+  "geminiApiKey": "YOUR_GEMINI_API_KEY",
+  "falApiKey": "YOUR_FAL_API_KEY",
+  "elevenLabsApiKey": "YOUR_ELEVENLABS_API_KEY",
+  "stabilityApiKey": "YOUR_STABILITY_API_KEY",
+  "youtubePlaylistId": "PLxxxxxxxxxxxxxxxx"
+}
+```
+
+Fill in the keys as you complete the steps below. The workflow reads them at runtime — no API keys are stored inside n8n nodes.
 
 ---
 
-## Credential 1: Google AI Studio API Key (Gemini)
+## Step 3: Import the Workflow
 
-**Used by**: Generate Script (Gemini), Generate Voiceover (Gemini TTS)
+1. Open [http://localhost:5678](http://localhost:5678)
+2. Click **Workflows** in the left sidebar
+3. Click **"Add workflow"** → **"Import from file"**
+4. Select `exports/youtube-shorts-tech-news.json`
+5. The workflow appears with all 18 nodes and 17 connections
+
+---
+
+## Credential 1: Google AI Studio API Key (Gemini — Script Generation)
+
+**Used by**: Generate Script (Gemini) node only
 
 ### Get API Key
 1. Go to [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
 2. Sign in with your Google account
 3. Click **"Create API Key"**
-4. Copy the key — you can always view it again from this page
+4. Copy the key
 
-**Cost**: Free. No billing required. Google AI Studio provides generous free tier limits.
+**Cost**: Free. No billing required.
 
-### Add to n8n Workflow
-The API key is passed directly in the URL query parameter — no n8n credential setup needed.
+### Add to keys.json
+```json
+{
+  "geminiApiKey": "AIza..."
+}
+```
 
-1. Open your imported workflow in n8n
-2. Open each of these 2 nodes and replace `YOUR_GEMINI_API_KEY` in the URL:
-   - **"Generate Script (Gemini)"** — URL contains `?key=YOUR_GEMINI_API_KEY`
-   - **"Generate Voiceover (Gemini TTS)"** — URL contains `?key=YOUR_GEMINI_API_KEY`
-3. Save the workflow
+The workflow reads the key from `/home/node/keys.json` — no n8n credential setup needed.
 
 ### Verify
 ```bash
-curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY" | head -20
+curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY" | head -5
 ```
-Should return a list of available Gemini models.
-
-### Free Tier Limits (as of Feb 2026)
-| Model | Limit |
-|---|---|
-| Gemini 3 Flash (script) | 5 RPM |
-| Gemini 3 Flash TTS (voiceover) | 10 RPM |
-
-These limits are sufficient for 1 script + 1 voiceover per run.
 
 ---
 
-## ComfyUI Setup (Local AI Image + Video Generation)
+## Credential 2: fal.ai API Key (Images Fallback + Video Clips + Music)
 
-The workflow uses ComfyUI running on the Windows host for all image and video generation. No cloud APIs needed.
+**Used by**: Generate Images (SD3/Flux), Generate Video Clips, Generate Background Music nodes
 
-### What ComfyUI Does
+### Get API Key
+1. Go to [fal.ai/dashboard](https://fal.ai/dashboard) and sign up
+2. Navigate to **API Keys**
+3. Click **"Add key"** and copy it
 
-| Stage | Model | Output | Time per item |
-|-------|-------|--------|--------------|
-| Image generation | SDXL base 1.0 | 768x1344 PNG | ~35-45s |
-| Video animation | HunyuanVideo I2V Q4 GGUF | 544x960, 49 frames at 24fps | ~8-12 min |
+**Cost per run:**
+- fal.ai Flux Schnell (fallback images, 6×): ~$0.09
+- fal.ai Kling v1.6 I2V (video clips, 6×5s): ~$2.10
+- fal.ai Stable Audio (45s music): ~$0.38
+- **Total fal.ai per run**: ~$2.57 (with all fal.ai services)
 
-### Setup
+### Add to keys.json
+```json
+{
+  "falApiKey": "YOUR_FAL_KEY"
+}
+```
 
-Follow the full setup guide in [comfyui/README.md](../comfyui/README.md). Summary:
-
-1. **Install ComfyUI** — Download portable from [GitHub releases](https://github.com/Comfy-Org/ComfyUI/releases), extract to `C:\ComfyUI`
-2. **Install custom nodes** — Run `comfyui\setup\install-custom-nodes.ps1` (GGUF loader for HunyuanVideo)
-3. **Download models** (~24GB) — Run `comfyui\setup\install-models.ps1` (requires `pip install huggingface-hub`)
-4. **Start ComfyUI** — Run `comfyui\setup\run_api_server.bat`
-5. **Windows Firewall** — Allow port 8188 for Docker access:
-   ```powershell
-   New-NetFirewallRule -DisplayName "ComfyUI API" -Direction Inbound -Protocol TCP -LocalPort 8188 -Action Allow
-   ```
-
-### Verify ComfyUI is Running
-
+### Verify
 ```bash
-curl http://localhost:8188/system_stats
+curl -H "Authorization: Key YOUR_KEY" https://fal.run/fal-ai/flux/schnell \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"test","image_size":"landscape_4_3","num_images":1}'
 ```
-Should return JSON with GPU info.
-
-### How n8n Connects to ComfyUI
-
-- n8n runs in Docker, ComfyUI runs on the Windows host
-- Docker reaches ComfyUI via `http://host.docker.internal:8188`
-- `docker-compose.yml` must have `extra_hosts: ["host.docker.internal:host-gateway"]`
-- The `COMFYUI_URL` env var is set in `.env` (default: `http://host.docker.internal:8188`)
-
-### VRAM Budget (RTX 3070 Ti 8GB)
-
-| Phase | Peak VRAM | Notes |
-|-------|-----------|-------|
-| SDXL base 1.0 image gen | ~5-6 GB | Fits on 8GB VRAM without special flags |
-| HunyuanVideo I2V | ~7-8 GB | GGUF offloads weights to 32GB system RAM |
-
-Models are loaded/unloaded sequentially — they cannot coexist in VRAM. ComfyUI handles the swap automatically (~30-60s between phases).
+Should return JSON with an `images[0].url`.
 
 ---
 
-## Credential 2: YouTube OAuth2
+## Credential 3: ElevenLabs API Key (Voiceover)
 
-**Used by**: Upload to YouTube, Add to Playlist
+**Used by**: Generate Voiceover (ElevenLabs) node
+
+### Get API Key
+1. Go to [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) and sign up
+2. Click **"Create API Key"**
+3. Copy it
+
+**Cost**: ~$0.17/run (Antoni voice, `eleven_multilingual_v2`, ~500 chars/script).
+**Plan required**: Starter ($5/month) or above — Free tier doesn't support the TTS API via REST. Starter includes 30,000 chars/month (~60+ runs).
+
+### Add to keys.json
+```json
+{
+  "elevenLabsApiKey": "YOUR_ELEVENLABS_API_KEY"
+}
+```
+
+**Note**: The workflow uses `output_format=mp3_44100_128` (128kbps). The 192kbps format requires Creator plan — don't change this unless you upgrade.
+
+### Verify
+```bash
+curl -H "xi-api-key: YOUR_KEY" https://api.elevenlabs.io/v1/user
+```
+
+---
+
+## Credential 4: Stability AI API Key (Images Primary — Optional)
+
+**Used by**: Generate Images (SD3/Flux) node — as primary image provider
+
+When present, the workflow uses Stability AI SD3 for image generation (~13 credits/image = 78 credits for 6 images). If your credit balance drops below 78, it automatically falls back to fal.ai Flux Schnell for the entire run. If the key is missing or left as placeholder, fal.ai Flux is used for all runs.
+
+### Get API Key
+1. Go to [platform.stability.ai/account/keys](https://platform.stability.ai/account/keys) and sign up
+2. Click **"Create API Key"**
+3. Copy it
+
+**Cost**: ~$0.08/run (6 images × 13 credits). Free trial credits available. 1,000 credits ≈ $10 ≈ 77 images ≈ 12 full runs.
+
+### Add to keys.json
+```json
+{
+  "stabilityApiKey": "YOUR_STABILITY_API_KEY"
+}
+```
+
+Leave as `"YOUR_STABILITY_API_KEY"` (placeholder) to always use fal.ai Flux instead.
+
+---
+
+## Credential 5: YouTube OAuth2
+
+**Used by**: Upload to YouTube, Add to Playlist nodes
 
 ### Step 1: Create Google Cloud Project
 1. Go to [console.cloud.google.com](https://console.cloud.google.com)
 2. Sign in with the **same Google account** as your YouTube channel
 3. Click the project dropdown (top-left) → **"New Project"**
 4. Name: `n8n YouTube Automation` → **Create**
-5. Make sure this new project is selected in the dropdown
+5. Make sure this new project is selected
 
 ### Step 2: Enable YouTube Data API v3
-1. Go to **APIs & Services** → **Library** (left sidebar)
+1. Go to **APIs & Services** → **Library**
 2. Search for **"YouTube Data API v3"**
 3. Click it → **"Enable"**
 
 ### Step 3: Configure OAuth Consent Screen
 1. Go to **APIs & Services** → **OAuth consent screen**
 2. Select **"External"** → **Create**
-3. Fill in:
-   - App name: `n8n YouTube`
-   - User support email: your email
-   - Developer contact email: your email
+3. Fill in: App name `n8n YouTube`, your email for support + developer contact
 4. Click **"Save and Continue"**
-5. **Scopes** page:
-   - Click **"Add or Remove Scopes"**
-   - Search and add: `youtube.upload`
-   - Search and add: `youtube` (or `youtube.force-ssl`)
-   - Click **"Update"** → **"Save and Continue"**
-6. **Test users** page (CRITICAL — skipping this causes "Access blocked" error):
-   - Click **"Add Users"**
-   - Add the **exact Google email** you'll use to sign in (e.g., `your-email@gmail.com`)
-   - Click **"Save and Continue"**
-   - If you already skipped this step and got "Access blocked": Go to **OAuth consent screen** → **Audience** tab → **Add Users** → add your email
+5. **Scopes** page → **"Add or Remove Scopes"** → add `youtube.upload` and `youtube` → **Update** → **Save and Continue**
+6. **Test users** page (CRITICAL — skipping causes "Access blocked"):
+   - Click **"Add Users"** → add your exact Google email
+   - **"Save and Continue"**
 7. Click **"Back to Dashboard"**
 
 ### Step 4: Create OAuth2 Credentials
@@ -165,89 +208,76 @@ Models are loaded/unloaded sequentially — they cannot coexist in VRAM. ComfyUI
 2. Click **"+ Create Credentials"** → **"OAuth client ID"**
 3. Application type: **Web application**
 4. Name: `n8n`
-5. Under **"Authorized redirect URIs"**:
-   - Click **"+ Add URI"**
-   - Enter: `http://localhost:5678/rest/oauth2-credential/callback`
-6. Click **"Create"**
-7. Copy **Client ID** and **Client Secret** from the popup
+5. Under **Authorized redirect URIs** → **"+ Add URI"**:
+   `http://localhost:5678/rest/oauth2-credential/callback`
+6. **Create** → copy **Client ID** and **Client Secret**
 
 ### Step 5: Add Credential to n8n
-1. Open your imported workflow in n8n
-2. Click on the **"Upload to YouTube"** node
-3. Click **"Credential to connect with"** → **"Create New Credential"**
-4. Select **"YouTube OAuth2 API"**
-5. Paste:
-   - **Client ID**: from step 4
-   - **Client Secret**: from step 4
-6. Click **"Sign in with Google"**
-7. Select your YouTube channel's Google account
-8. If you see "This app isn't verified" warning:
-   - Click **"Advanced"** → **"Go to n8n YouTube (unsafe)"**
-   - This is safe — it's your own app
-9. Click **"Allow"** for all requested permissions
-10. You should see **"Connected"** in n8n
-11. Click **"Save"**
+1. Open the **"Upload to YouTube"** node in n8n
+2. Click **"Credential to connect with"** → **"Create New Credential"** → **"YouTube OAuth2 API"**
+3. Paste Client ID and Client Secret
+4. Click **"Sign in with Google"**
+5. If you see "This app isn't verified" → click **"Advanced"** → **"Go to n8n YouTube (unsafe)"** — this is safe, it's your own app
+6. Click **"Allow"** → you should see **"Connected"**
+7. **Save**
+8. Assign the same credential to the **"Add to Playlist"** node
 
 ### YouTube API Quotas
-- Daily quota: 10,000 units
-- Video upload: 1,600 units per upload
-- Maximum ~6 uploads per day within free quota
+- Daily quota: 10,000 units | Video upload: ~1,600 units → max ~6 uploads/day
 - Quota resets at midnight Pacific Time
-
-### OAuth Token Refresh
-- Tokens expire periodically
-- n8n auto-refreshes them, but if upload fails with auth error:
-  - Go to the YouTube credential in n8n
-  - Click **"Sign in with Google"** again to re-authorize
-- **Important**: If your Google Cloud app is in "Testing" mode, refresh tokens expire after **7 days**. To prevent this, go to Google Cloud Console → OAuth consent screen → Publishing status → **Publish App**. Published apps don't have the 7-day expiry (you can still restrict to your own account).
+- OAuth tokens auto-refresh. If you get auth errors after 7 days, your app is in "Testing" mode — publish it: Google Cloud Console → OAuth consent screen → **Publish App**
 
 ---
 
-## Playlist Setup (Optional)
-
-The workflow includes an **"Add to Playlist"** node that automatically adds each uploaded video to a YouTube playlist.
+## Playlist Setup
 
 ### Get Your Playlist ID
-1. Open YouTube and go to the playlist you want videos added to (or create a new one)
-2. The URL will look like: `https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxx`
-3. Copy the part after `list=` — that's your playlist ID (starts with `PL`)
+1. Open YouTube → go to the playlist you want videos added to (or create one)
+2. URL will look like: `https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxx`
+3. Copy the part after `list=`
+
+### Configure in keys.json
+```json
+{
+  "youtubePlaylistId": "PLxxxxxxxxxxxxxxxxxx"
+}
+```
 
 ### Configure in n8n
 1. Click on the **"Add to Playlist"** node
-2. Replace `YOUR_PLAYLIST_ID` with your actual playlist ID
-3. Make sure the **YouTube OAuth2** credential is assigned (same credential as the Upload to YouTube node)
-4. Click **"Save"**
+2. Verify `playlistId` is set to `={{ $('Prepare YouTube Metadata').first().json.playlistId }}`
 
 ### Skip Playlist
-If you don't want videos added to a playlist:
-- Delete the **"Add to Playlist"** node
-- Connect **"Upload to YouTube"** directly to **"Success Output"**
+Delete the **"Add to Playlist"** node and connect **"Upload to YouTube"** directly to **"Success Output"**.
 
 ---
 
 ## Post-Setup: First Test Run
 
-### Before running, change to unlisted
-1. Open workflow
-2. Click **"Upload to YouTube"** node
-3. Change `privacyStatus` from `public` to `unlisted`
-4. Save
+### Change to unlisted first
+1. Open the **"Upload to YouTube"** node
+2. Change `privacyStatus` from `public` to `unlisted`
+3. Save
 
 ### Run the workflow
-1. Make sure **ComfyUI is running** (`curl http://localhost:8188/system_stats`)
-2. Click **"Test Workflow"** (play button in top-right)
-3. Wait **80-110 minutes** for full execution (most time is HunyuanVideo I2V clips)
-4. Watch the execution progress — each node lights up green when done
+1. Open the workflow in n8n
+2. Click **"Test Workflow"** (play button, top-right)
+3. Wait **25-40 minutes** for full execution
+4. Watch nodes turn green as they complete
 
-### Verify
-- [ ] Reddit and HN data were fetched successfully
-- [ ] Gemini 3 Flash picked a story and generated a script with ~120 words + 8 image prompts
-- [ ] 8 vertical images were generated by ComfyUI SDXL base 1.0 (768x1344)
-- [ ] 8 video clips were animated by ComfyUI HunyuanVideo I2V (544x960, ~2s each)
-- [ ] Voiceover audio was created by Gemini 3 Flash TTS
-- [ ] FFmpeg stitched clips + audio into 1080x1920 MP4 (~45 seconds)
-- [ ] Video appeared in your YouTube Studio as unlisted
-- [ ] Video was added to your playlist (if configured)
+### Verify checklist
+- [ ] Reddit and HN data fetched (nodes 2-4 green)
+- [ ] Story selected from top 3 candidates — 14-day dupe check passed (node 5 green)
+- [ ] Gemini 3 Flash generated 75-90 word HECK-loop script + 6 image prompts (node 7 green)
+- [ ] Script validated: ≥65 words, ≥3 tags, ≥5 image prompts (node 8 green)
+- [ ] 6 vertical images generated — Stability AI SD3 or fal.ai Flux Schnell (node 9 green)
+- [ ] 6 video clips animated by fal.ai Kling v1.6 I2V (5s each, 9:16) (node 10 green)
+- [ ] MP3 voiceover generated by ElevenLabs Antoni (node 11 green)
+- [ ] 45s background music generated by fal.ai Stable Audio (or silence fallback) (node 12 green)
+- [ ] FFmpeg composed 1080×1920 MP4 (~38-45s, no burned captions) (node 13 green)
+- [ ] Video saved locally to `videos/{timestamp}_{title}/video.mp4` (node 14 green)
+- [ ] Video uploaded to YouTube as unlisted (node 16 green)
+- [ ] Video added to playlist (if configured) (node 17 green)
 
 ### Switch to public
 Once verified, change `privacyStatus` back to `public` for future runs.
@@ -256,122 +286,96 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 
 ## Credential Summary
 
-| # | Credential | Type | Nodes Using It | Cost |
+| # | Credential | Where Set | Nodes | Cost/Run |
 |---|---|---|---|---|
-| 1 | Google AI Studio (Gemini) | API Key in URL | Script Gen, TTS | $0.00 (free tier) |
-| 2 | ComfyUI | Local API (no auth) | Generate Images, Animate Images | $0.00 (local) |
-| 3 | YouTube OAuth2 | OAuth2 | Upload to YouTube, Add to Playlist | Free |
+| 1 | Google AI Studio (Gemini) | `keys.json` → `/home/node/keys.json` | Generate Script | $0.00 (free) |
+| 2 | fal.ai | `keys.json` → `/home/node/keys.json` | Generate Images (fallback), Generate Video Clips, Generate Music | ~$2.57 |
+| 3 | ElevenLabs | `keys.json` → `/home/node/keys.json` | Generate Voiceover | ~$0.17 |
+| 4 | Stability AI | `keys.json` → `/home/node/keys.json` | Generate Images (primary) | ~$0.08 (optional) |
+| 5 | YouTube OAuth2 | n8n credential UI | Upload to YouTube, Add to Playlist | Free |
+
+**Total per video**: ~$2.82 (SD3 images + all cloud AI) or ~$2.73 (all fal.ai)
+**Monthly (30 Shorts)**: ~$44/month
+
+> **Instagram**: Upload manually using `upload-info.txt` saved in each `videos/{timestamp}_{title}/` folder — pre-written caption + hashtags ready to paste.
 
 ---
 
 ## Troubleshooting
 
-### "API key not valid" on Gemini nodes
-- Verify the key at [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
-- Make sure it's not expired or deleted
-- Check the URL: `?key=YOUR_ACTUAL_KEY` (no quotes, no spaces)
+### "Cannot require 'child_process'" in any Code node
+- Ensure you started n8n via `docker compose up -d` from `D:\N8n`
+- The custom docker-compose.yml sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
 
 ### FFmpeg "command not found"
-- Rebuild the custom image from `D:\N8n`: `docker compose build && docker compose up -d`
-- The custom Dockerfile installs FFmpeg via `npm -g ffmpeg-static` and symlinks to `/usr/local/bin/`
+- Rebuild the custom image: `docker compose build && docker compose up -d` from `D:\N8n`
 
-### "Cannot require 'child_process'"
-- Ensure you're using `docker compose up -d` (sets `NODE_FUNCTION_ALLOW_BUILTIN` automatically)
-- If running manually: add `-e NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` to your Docker command
+### keys.json not found
+- Verify the volume mount in `D:\N8n\docker-compose.yml` includes: `"d:/Github Clones/N8nYtAutomation/keys.json:/home/node/keys.json:ro"`
+- Run `docker compose restart` after adding the mount
 
-### "OAuth token expired" or "refresh token is invalid/expired/revoked" on YouTube
-- Go to the credential in n8n → click "Sign in with Google" again to re-authorize
-- Make sure you added yourself as a test user in Google Cloud Console
-- **If this keeps happening every 7 days**: Your app is in "Testing" mode. Go to Google Cloud Console → OAuth consent screen → Publishing status → **Publish App** to get permanent refresh tokens
+### fal.ai 401 Unauthorized
+- Verify the API key at fal.ai/dashboard
+- The key is read from `keys.json` — ensure `falApiKey` is set correctly
 
-### "Redirect URI mismatch" on YouTube OAuth
-- In Google Cloud Console → Credentials → edit your OAuth client
-- Make sure the redirect URI is exactly: `http://localhost:5678/rest/oauth2-credential/callback`
-- No trailing slash, no https (it's localhost)
+### ElevenLabs 403 or quota exceeded
+- Free tier doesn't support TTS API — upgrade to Starter plan ($5/month)
+- Starter: 30,000 chars/month. Each script is ~75-90 words (~450 chars) — about 66 runs/month
 
-### "Access blocked: n8n YouTube has not completed Google verification"
-- **Most common cause**: You didn't add yourself as a test user
-- **Fix**: Google Cloud Console → **APIs & Services** → **OAuth consent screen** → **Audience** tab → **Add Users** → add your exact Google email
-- After adding, go back to n8n and click **"Sign in with Google"** again
+### ElevenLabs 422 output format error
+- The workflow uses `mp3_44100_128` — don't change to `mp3_44100_192` unless on Creator plan
 
-### "This app isn't verified" warning (different from above)
-- This is normal for test/unverified apps — your app works fine
-- Click **"Advanced"** → **"Go to n8n YouTube (unsafe)"**
-- This is safe — it's your own app, not a third party
-
-### "Quota exceeded" on YouTube
-- Free quota: 10,000 units/day, upload = 1,600 units
-- Wait until midnight Pacific Time for quota reset
-- Or request a quota increase in Google Cloud Console
+### Stability AI 402 or low credits
+- The workflow auto-checks your balance before each run
+- If credits < 78 (needed for 6 images), it falls back to fal.ai Flux automatically
+- Buy more credits at platform.stability.ai
 
 ### Gemini rate limits / 503 errors
-- If you see 429 errors, you've hit the free tier rate limit — wait a few minutes and try again
-- Limits reset per minute (RPM) and per day (RPD)
-- 503 "Service unavailable" errors are transient — the Generate Script node has auto-retry enabled (3 attempts, 5s delay)
+- Free tier: 15 RPM on Gemini 3 Flash. Wait a minute and retry
+- 503 "Service unavailable" errors are transient — just re-run the workflow
+
+### Gemini JSON truncated / "No JSON object found"
+- Fixed in v8.4 via `thinkingConfig: { thinkingBudget: 0 }` + `maxOutputTokens: 8192`
+- If it recurs: verify the `scriptGen` node has both config values set
+
+### "OAuth token expired" on YouTube
+- Go to the YouTube credential in n8n → click **"Sign in with Google"** again
+- If it keeps expiring every 7 days: publish your Google Cloud app (OAuth consent screen → Publish App)
+
+### "Access blocked" on YouTube OAuth
+- Add yourself as a test user: Google Cloud Console → APIs & Services → OAuth consent screen → Audience → Add Users → add your Google email
+
+### "Redirect URI mismatch" on YouTube OAuth
+- In Google Cloud Console → Credentials → edit OAuth client
+- Redirect URI must be exactly: `http://localhost:5678/rest/oauth2-credential/callback` (no trailing slash, http not https)
+
+### Local video export not working
+- Verify the volume mount in `D:\N8n\docker-compose.yml`: `"d:/Github Clones/N8nYtAutomation/videos:/home/node/videos"`
+- Verify `/home/node/videos` is in `N8N_RESTRICT_FILE_ACCESS_TO`
+- Run `docker compose restart` from `D:\N8n` after adding the volume mount
+
+### Video too long (>45s)
+- Check `scriptGen` word target — should be 75-90 words
+- Check `parseScript` min word count — should be 65
+
+### Duplicate story detected every run
+- Delete `/home/node/videos/last_stories.json` inside Docker: `docker exec n8n sh -c "rm /home/node/videos/last_stories.json"`
+- This resets the 14-day history
 
 ---
 
 ## Migrating to Another n8n Instance
 
-### Method 1: Export/Import via n8n UI (Easiest)
-
-**Export from current instance:**
-1. Open your workflow in n8n
-2. Click the **three dots menu** in the top-right → **"Download"**
-3. This saves a `.json` file with the complete workflow (nodes, connections, settings)
-4. Credentials are **NOT included** in the export (for security)
-
-**Import to new instance:**
-1. Open the new n8n instance
-2. Click **"Add workflow"** (or **"Import from file"** on the workflows page)
-3. Select the downloaded `.json` file
-4. The workflow will appear with all nodes and connections intact
-5. **Re-configure credentials** on the new instance (see credential setup sections above)
-
-### Method 2: n8n API (Programmatic)
-
-**Export via API:**
-```bash
-curl -H "X-N8N-API-KEY: $N8N_API_KEY" \
-  http://localhost:5678/api/v1/workflows/YOUR_WORKFLOW_ID \
-  -o youtube-shorts-workflow.json
-```
-
-**Import via API:**
-```bash
-curl -X POST \
-  -H "X-N8N-API-KEY: $N8N_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d @youtube-shorts-workflow.json \
-  http://your-n8n-url:5678/api/v1/workflows
-```
-
-### Method 3: n8n Cloud Migration
-
-If migrating from Docker to n8n Cloud:
-1. Export the workflow JSON from Docker instance (Method 1 or 2)
-2. Sign up at [app.n8n.cloud](https://app.n8n.cloud)
-3. Import the workflow JSON
-4. Re-configure credentials (Cloud has built-in OAuth handling — easier setup)
-5. Replace **Manual Trigger** with **Schedule Trigger** for daily automation:
-   - Edit the first node → change type to Schedule Trigger
-   - Set cron: `0 9 * * *` (daily at 9 AM)
-6. Note: FFmpeg must be available on the cloud instance or replaced with an external video API
-7. Activate the workflow
+### Export/Import via n8n UI
+1. Open workflow → three dots menu → **"Download"** (saves `.json` — no credentials included)
+2. On new instance: **Import from file** → re-configure all credentials
 
 ### After Migration Checklist
-
-On the new instance, you must:
-- [ ] Replace `YOUR_GEMINI_API_KEY` in 2 nodes (Generate Script, Generate Voiceover)
-- [ ] Set up ComfyUI with SDXL base 1.0 + HunyuanVideo I2V models (see `comfyui/README.md`)
-- [ ] Create and assign **YouTube OAuth2** credential (new OAuth2 client or reuse existing)
-- [ ] Update **playlist ID** in the "Add to Playlist" node (or remove the node if not needed)
-- [ ] Update the **YouTube OAuth2 redirect URI** to match the new instance URL
-  - Docker: `http://localhost:5678/rest/oauth2-credential/callback`
-  - Cloud: `https://your-instance.app.n8n.cloud/rest/oauth2-credential/callback`
-- [ ] Add the `videos/` volume mount to `docker-compose.yml`: `"path/to/N8nYtAutomation/videos:/home/node/videos"` and add `/home/node/videos` to `N8N_RESTRICT_FILE_ACCESS_TO`
-- [ ] Copy `Dockerfile` and `docker-compose.yml` to the n8n directory, then `docker compose up -d` (or manually install FFmpeg and set env var)
-- [ ] Verify FFmpeg works: `docker exec n8n ffmpeg -version`
-- [ ] Verify ComfyUI is reachable: `curl http://localhost:8188/system_stats`
+- [ ] Copy `keys.json` to the new repo root and verify all API keys
+- [ ] Create and assign **YouTube OAuth2** credential in n8n
+- [ ] Update `playlistId` in `keys.json` (or remove Add to Playlist node)
+- [ ] Update YouTube OAuth2 redirect URI to match the new instance URL
+- [ ] Add both volume mounts to `docker-compose.yml` (videos + keys.json)
+- [ ] Run `docker compose build && docker compose up -d`
+- [ ] Verify FFmpeg: `docker exec n8n ffmpeg -version`
 - [ ] Test with `privacyStatus: "unlisted"` before going public
-- [ ] Verify all 17 nodes execute successfully end-to-end

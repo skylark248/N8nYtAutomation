@@ -2,10 +2,11 @@
 
 ## Overview
 - **Triggers**: Manual (click to run)
-- **Nodes**: 17 | **Connections**: 16
-- **Estimated Runtime**: 80-110 minutes per video (local AI generation)
-- **Monthly Cost**: $0.00 (all local AI + free APIs)
+- **Nodes**: 18 | **Connections**: 17
+- **Estimated Runtime**: 25-40 minutes per video (cloud AI generation)
+- **Monthly Cost**: ~$44/month for 30 Shorts (~$1.47/video: ~$0.78 images + $2.10 video + $0.17 voice + $0.37 music)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
+- **Version**: v8.4
 
 ## Pipeline
 
@@ -13,52 +14,55 @@
 Manual Trigger
     |
     v
-[Fetch Reddit Posts] -- GET old.reddit.com/r/technology/hot.json
+[Fetch Reddit Posts] -- GET old.reddit.com/r/technology/hot.json?limit=15
     |
     v
-[Format Reddit Data] -- Code node: extracts top 10 post summaries
+[Format Reddit Data] -- Code: extracts top 10 non-stickied posts
     |
     v
-[Fetch HN Posts] -- GET hn.algolia.com/api/v1/search (front page)
+[Fetch HN Posts] -- GET hn.algolia.com/api/v1/search (front page, 10 results)
     |
     v
-[Pick Best Story] -- Code node: combines Reddit + HN data into prompt
+[Pick Best Story] -- Code: score+rank all posts, dedupe against 14-day history, output top 3
     |
     v
-[Prepare Story Data] -- Code node: formats combined prompt for Gemini
+[Prepare Story Data] -- Code: pass rankedStories + timestamp (no API keys in output)
     |
     v
-[Generate Script (Gemini)] -- Gemini 3 Flash: script, title, description, tags, 8 image prompts
+[Generate Script (Gemini)] -- Code+sandbox: Gemini 3 Flash, HECK-loop script (75-90 words),
+    |                          title, 6 tags, 6 beat-tied image prompts. thinkingBudget:0
+    v
+[Parse Script JSON] -- Code: parse + validate Gemini JSON (≥65 words, ≥3 tags, ≥5 prompts)
     |
     v
-[Parse Script JSON] -- Code node: parses Gemini JSON response
+[Generate Images (SD3/Flux)] -- Code+sandbox: Stability AI SD3 primary (~78 credits/run,
+    |                            base64 → data URIs) / fal.ai Flux Schnell fallback (~$0.09)
+    v
+[Generate Video Clips (fal.ai Kling)] -- Code+sandbox: Kling v1.6 I2V queue API,
+    |                                     6x clips (9:16, 5s each), ~$2.10 total
+    v
+[Generate Voiceover (ElevenLabs)] -- Code+sandbox: eleven_multilingual_v2, voice Antoni,
+    |                                 MP3 128kbps, ~$0.17/run
+    v
+[Generate Background Music (Stable Audio)] -- Code+sandbox: fal.ai Stable Audio,
+    |                                          45s WAV→MP3, ~$0.37/run
+    v
+[Compose Video (FFmpeg)] -- Code: download 6 clips + minterpolate + xfade + voice+music mix,
+    |                        1080x1920 MP4, no burned captions (YouTube auto-captions used)
+    v
+[Export Video Locally] -- Code: save video.mp4 + upload-info.txt to videos/{timestamp}_{title}/
     |
     v
-[Generate Images (ComfyUI SDXL)] -- Code node: SDXL base 1.0 via ComfyUI API, 8x images (768x1344)
+[Prepare YouTube Metadata] -- Code: append #Shorts, category 28, format tags
     |
     v
-[Animate Images (ComfyUI Hunyuan)] -- Code node: HunyuanVideo I2V via ComfyUI API, 8x clips (544x960)
+[Upload to YouTube] -- YouTube node: upload video binary, privacy: public
     |
     v
-[Generate Voiceover (Gemini TTS)] -- Gemini 2.5 Flash TTS: PCM audio (base64)
+[Add to Playlist] -- YouTube node: add video to playlist
     |
     v
-[Compose Video (FFmpeg)] -- Code node: stitch + slow-stretch + crossfade + audio, 1080x1920 MP4
-    |
-    v
-[Export Video Locally] -- Code node: save video.mp4 + upload-info.txt to videos/{timestamp}_{title}/
-    |
-    v
-[Prepare YouTube Metadata] -- append #Shorts, category 28, format tags
-    |
-    v
-[Upload to YouTube] -- upload video binary, privacy: public
-    |
-    v
-[Add to Playlist] -- add video to YouTube playlist
-    |
-    v
-[Success Output] -- return videoUrl, videoId, uploadTime
+[Success Output] -- Code: return youtubeUrl, uploadTime
 ```
 
 ## Node Details
@@ -80,36 +84,20 @@ Manual Trigger
   "headerParameters": {
     "parameters": [
       { "name": "User-Agent", "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
-      { "name": "Accept", "value": "application/json" }
+      { "name": "Accept", "value": "application/json, text/plain, */*" }
     ]
   },
   "options": { "timeout": 10000 }
 }
 ```
 
+**Note**: Must use `old.reddit.com` + Chrome User-Agent. Reddit returns 403 to bot UAs.
+
 ### Node 3: Format Reddit Data
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `formatReddit`
 
-**Code**:
-```javascript
-const data = $input.first().json;
-const posts = data?.data?.children || [];
-const topPosts = posts
-  .filter(p => !p.data.stickied)
-  .slice(0, 10)
-  .map((p, i) => {
-    const d = p.data;
-    return `${i+1}. [Score: ${d.score}] ${d.title} (${d.num_comments} comments)`;
-  })
-  .join('\n');
-
-return {
-  json: {
-    redditSummary: topPosts
-  }
-};
-```
+Filters out stickied posts, extracts top 10, formats as `[Score: N] Title (N comments)`.
 
 ### Node 4: Fetch HN Posts
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
@@ -127,315 +115,296 @@ return {
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `pickStory`
 
-**Code**:
-```javascript
-const redditData = $('Format Reddit Data').first().json.redditSummary || 'No Reddit data';
+**Logic**:
+1. Scores every Reddit + HN post by engagement:
+   - Reddit: `score + num_comments × 2 + viralBoost`
+   - HN: `points + num_comments × 3 + viralBoost`
+   - `viralBoost` = matched viral keywords × 300 (30-word list: ai, robot, ban, billion, hack, breach, leak, secret, first, outrage, lawsuit, fired, ceo, agi, gpt, claude, open source, shutdown, censor, record, largest, biggest, collapse, surge, revolution, milestone, breakthrough)
+2. Sorts all posts by score descending
+3. **Duplicate detection**: reads `/home/node/videos/last_stories.json` (14-day history). Skips any story where 60%+ of meaningful words (4+ chars) match a previously used title
+4. Selects top 3 non-duplicate stories
+5. Fallback: if all top stories are duplicates, takes top 3 anyway (never blocks the run)
+6. Saves chosen story #1 title to history (keeps last 14 entries)
 
-const hnRaw = $input.first().json;
-const hnHits = hnRaw.hits || [];
-const hnSummary = hnHits.slice(0, 10).map((h, i) => {
-  return `${i+1}. [Points: ${h.points}] ${h.title} (${h.num_comments} comments) - ${h.url || 'https://news.ycombinator.com/item?id=' + h.objectID}`;
-}).join('\n');
-
-return {
-  json: {
-    redditSummary: redditData,
-    hnSummary: hnSummary,
-    combinedPrompt: `REDDIT TOP POSTS (r/technology):\n${redditData}\n\nHACKER NEWS FRONT PAGE:\n${hnSummary}\n\nFrom the stories above, pick the SINGLE most interesting, viral tech/AI story...`
-  }
-};
-```
+**Output**: `{ rankedStories }` — numbered list of top 3 stories with source and score
 
 ### Node 6: Prepare Story Data
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `parseAgent`
 
-**Code**:
-```javascript
-const data = $input.first().json;
+Passes `rankedStories` as `rawStory` + adds `timestamp`. Does NOT include API keys in output (prevents key leakage into n8n execution logs).
 
-return {
-  json: {
-    rawStory: data.combinedPrompt,
-    redditSummary: data.redditSummary,
-    hnSummary: data.hnSummary,
-    timestamp: new Date().toISOString()
-  }
-};
+```javascript
+return { json: { rawStory: data.rankedStories, timestamp: new Date().toISOString() } };
 ```
 
 ### Node 7: Generate Script (Gemini)
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2)
+- **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `scriptGen`
-- **Auth**: API key in URL query parameter (no n8n credential)
-- **Retry**: `retryOnFail: true`, `maxTries: 3`, `waitBetweenTries: 5000` (handles transient 503 errors)
+- **External service**: Gemini 3 Flash (`gemini-3-flash-preview`)
 
-**Parameters**:
-- Method: POST
-- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=YOUR_GEMINI_API_KEY`
-- Body: JSON with `contents`, `systemInstruction`, and `generationConfig`
-- `responseMimeType: 'application/json'` forces structured JSON output
-- System prompt: "tech news researcher and YouTube Shorts scriptwriter"
-- Requests: SCRIPT (110-120 words), TITLE (under 70 chars), DESCRIPTION, TAGS, IMAGE_PROMPTS (8 vertical 9:16 prompts)
-- Timeout: 60000ms
+**Logic**:
+1. Reads `geminiApiKey` directly from `/home/node/keys.json` (NOT from input — prevents key appearing in execution logs)
+2. Builds Gemini request body with `thinkingBudget: 0` (disables thinking tokens — prevents JSON truncation) and `maxOutputTokens: 8192`
+3. Sandbox escape: writes request to `/tmp/n8n_gemini_*/body.json`, spawns `node gemini.js` for https access
+4. Returns raw Gemini API JSON response
+
+**Prompt target**: 75-90 words, HECK loop (Hook-Explain×2-Climax×2-Kicker), Hook phrase echoed exactly in Kicker for seamless replay loop. 6 beat-tied image prompts.
+
+**Model**: `gemini-3-flash-preview` (free, via Google AI Studio API key)
 
 ### Node 8: Parse Script JSON
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `parseScript`
 
-Parses Gemini JSON response from `candidates[0].content.parts[0].text`. Uses `findScriptData()` to recursively search for the SCRIPT field up to 2 levels deep — handles flat `{SCRIPT, ...}`, wrapped `{YOUTUBE_SHORT: {SCRIPT, ...}}`, and nested `{story_analysis: {...}, youtube_short_script: {SCRIPT, ...}}` formats. Normalizes both UPPER and lowercase keys. Falls back to regex extraction if response isn't clean JSON. Validates at least 4 image prompts.
+**Logic**:
+1. Finds non-thought part in `candidates[0].content.parts` (skips parts with `thought: true`)
+2. Parses JSON; falls back to regex `{[\s\S]*}` extraction if response has markdown fences
+3. `findScriptData()` searches up to 2 levels deep for the SCRIPT key (handles flat and nested Gemini response formats)
+4. Normalizes UPPER and lowercase keys
 
-### Node 9: Generate Images (ComfyUI SDXL)
+**Validation**: ≥65 words, ≥3 tags, ≥5 image prompts. Throws descriptive error if any check fails.
+
+**Output**: `{ script, title, description, tags, imagePrompts, wordCount, timestamp }`
+
+### Node 9: Generate Images (SD3/Flux)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `generateImages`
-- **External service**: ComfyUI on Windows host via `http://host.docker.internal:8188`
+- **External services**: Stability AI SD3 (primary) / fal.ai Flux Schnell (fallback)
 
 **Logic**:
-1. Takes 8 image prompts from Parse Script JSON
-2. Health check: `GET /system_stats` before starting
-3. For each of 8 prompts:
-   - Loads embedded SDXL base 1.0 workflow template (ComfyUI API format)
-   - Injects prompt text and random seed
-   - `POST /prompt` to submit job
-   - Polls `GET /history/{prompt_id}` every 3s until complete (180s timeout)
-   - Downloads output image via `GET /view?filename=...&type=output`
-   - Converts to base64
-4. Sequential processing (8GB VRAM — one image at a time)
-5. Writes helper Node.js script to `/tmp/` (sandbox escape for `http` module access)
+1. Checks Stability AI balance **once upfront** via `GET api.stability.ai/v1/user/balance`
+2. If credits ≥ `prompts.length × 13` (78 for 6 images): uses SD3 for ALL images
+3. If credits insufficient: logs `"Stability credits N < 78 needed, using fal.ai Flux"` and uses Flux for ALL images
+4. Balance check is atomic — provider never changes mid-run, every image uses the same provider
 
-**Image specs**: 768x1344 pixels (9:16), 30 steps, dpmpp_2m sampler, karras scheduler, cfg 7.5. ~35-45s per image.
+**SD3 path**:
+- Builds multipart form bodies in the n8n Code node (avoids escaping issues in spawned scripts)
+- Base64-encodes each body, passes via `cfg.json`
+- Spawned script decodes and POSTs to `api.stability.ai/v2beta/stable-image/generate/sd3`
+- Response `{image: "<base64>"}` → converted to `data:image/jpeg;base64,...` data URI
+- fal.ai Kling confirmed to accept data URIs as `image_url` directly
 
-**Output**: `{ imageBase64Array: [...], imageCount: 8, script, title, description, tags }`
+**Flux fallback path**:
+- POST to `fal.run/fal-ai/flux/schnell` with JSON body
+- Returns CDN URLs directly
 
-### Node 10: Animate Images (ComfyUI Hunyuan)
+**Specs**:
+- SD3: 9:16 aspect ratio, JPEG, ~13 credits/image, ~78 credits/run
+- Flux: 768×1344 pixels (9:16), ~$0.015/image, ~$0.09/run
+
+**Output**: `{ imageUrls, imageCount, imageProvider: 'stability-sd3'|'fal-flux', script, title, description, tags, imagePrompts }`
+
+### Node 10: Generate Video Clips (fal.ai Kling)
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `animateImages`
-- **External service**: ComfyUI on Windows host via `http://host.docker.internal:8188`
+- **ID**: `generateVideo`
+- **External service**: `queue.fal.run/fal-ai/kling-video/v1.6/standard/image-to-video`
 
 **Logic**:
-1. Takes 8 base64 images from Generate Images node
-2. For each of 8 images:
-   - Writes image to `/tmp/` as PNG
-   - Uploads via `POST /upload/image` (multipart form)
-   - Loads embedded HunyuanVideo I2V Q4 GGUF workflow template
-   - Injects uploaded filename, cinematic motion prompt, and random seed
-   - `POST /prompt` to submit job
-   - Polls `GET /history/{prompt_id}` every 10s until complete (20 min timeout)
-   - Downloads WEBP output via `GET /view`
-   - Converts WEBP→MP4 via FFmpeg
-   - Converts to base64
-3. Global 9000s time budget (150 min) — if exhausted, remaining images get simple 3s static MP4 fallback
-4. Motion prompts: prepends cinematic descriptions (zoom, pan, dolly, tilt) to original image prompts
+1. Takes 6 image URLs/data URIs from Generate Images node
+2. For each image: POST to queue endpoint → receive `request_id`, `status_url`, `response_url`
+3. Polls `status_url` directly (from fal.ai response — NOT manually constructed)
+4. On `COMPLETED`: fetches `response_url` → extracts `video.url`
+5. Sandbox escape via spawned Node.js script
+6. Auth: `Authorization: Key {falApiKey}`
 
-**Video specs**: 544x960 pixels, 49 frames at 24fps (~2s clips), 20 steps, CFG 1.0. ~7-12 min per clip.
+**Video specs**: 9:16 aspect ratio, 5s duration per clip, 6 cinematic motion prompts. ~$0.35/clip, ~$2.10 total.
+**Timeout**: 1800s per clip.
 
-**Output**: `{ videoClipBase64Array: [...], clipCount: 8, clipDurations: [...], script, title, description, tags }`
+**Output**: `{ videoUrls, clipDurations, clipCount, script, title, description, tags }`
 
-### Node 11: Generate Voiceover (Gemini TTS)
-- **Type**: `n8n-nodes-base.httpRequest` (v4.2)
+### Node 11: Generate Voiceover (ElevenLabs)
+- **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `voiceover`
-- **Auth**: API key in URL query parameter (no n8n credential)
-- **Note**: Receives data from Animate Images node (not Generate Images)
+- **External service**: `api.elevenlabs.io/v1/text-to-speech`
 
-**Parameters**:
-- Method: POST
-- URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=YOUR_GEMINI_API_KEY`
-- Body:
-```json
-{
-  "contents": [{ "parts": [{ "text": "Read this as an engaging, energetic tech news narrator: [SCRIPT]" }] }],
-  "generationConfig": {
-    "responseModalities": ["AUDIO"],
-    "speechConfig": {
-      "voiceConfig": {
-        "prebuiltVoiceConfig": { "voiceName": "Kore" }
-      }
-    }
-  }
-}
-```
-- Returns base64 PCM audio (24kHz, 16-bit, mono) in `candidates[0].content.parts[0].inlineData.data`
-- Voice options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr`
-- Timeout: 30000ms
+**Logic**:
+1. POST to `https://api.elevenlabs.io/v1/text-to-speech/ErXwobaYiN019PkySvjV?output_format=mp3_44100_128`
+2. Auth: `xi-api-key: {elevenLabsApiKey}`
+3. Body: `{ text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } }`
+4. Response is binary MP3 piped directly to file
+5. Sandbox escape via spawned Node.js script
 
-### Node 12: Compose Video (FFmpeg)
+**Voice**: Antoni (`ErXwobaYiN019PkySvjV`), eleven_multilingual_v2.
+**Plan**: Starter minimum. `mp3_44100_128` (128kbps) — Creator plan required for 192kbps.
+**Cost**: ~$0.17/run (~3,000 chars at $0.30/1k on Starter).
+
+**Output**: Binary `voice` (MP3) + JSON passthrough
+
+### Node 12: Generate Background Music (Stable Audio)
+- **Type**: `n8n-nodes-base.code` (v2)
+- **ID**: `generateMusic`
+- **External service**: `fal.run/fal-ai/stable-audio`
+
+**Logic**:
+1. POST JSON `{prompt, seconds_total: 45, steps: 100}` to `fal.run/fal-ai/stable-audio`
+2. Auth: `Authorization: Key {falApiKey}` (same key as images/video)
+3. Response: `{audio_file: {url}}` — downloads WAV from CDN
+4. Converts WAV → MP3 via FFmpeg (`-c:a libmp3lame -b:a 128k`)
+5. Sandbox escape via spawned Node.js script
+6. **Exec timeout**: 300s (generation takes ~70-90s + download time)
+7. **Fallback**: if `falApiKey` missing, generates 45s FFmpeg silence
+
+**Note**: Previous Stability AI audio endpoint (`api.stability.ai/v2beta/stable-audio/generate`) returns 404 — removed April 2026. fal.ai is now the only audio provider.
+
+**Output**: Binary `music` (MP3) + passes through `voice` binary
+
+### Node 13: Compose Video (FFmpeg)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `composeVideo`
-- **Requires**: `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` and FFmpeg installed
 
 **Logic**:
-1. Gets video clips from `Animate Images (ComfyUI Hunyuan)` node — `videoClipBase64Array`
-2. Gets audio from `Generate Voiceover (Gemini TTS)` node — PCM base64
-3. Writes 8 base64 MP4 clips to `/tmp/n8n_video_*/clip_0.mp4` ... `clip_7.mp4`
-4. Writes base64 PCM audio → converts to WAV via FFmpeg (`-f s16le -ar 24000 -ac 1`)
-5. Probes audio duration to calculate speed factor for clip slow-stretching
-6. Slow-stretches each clip with `setpts=PTS/speedFactor` to match audio duration (creates dreamy slow-motion effect)
-7. Scales all clips from 544x960 → 1080x1920
-8. Crossfade transitions (0.3s) between clips
-9. Overlays audio track
-10. Output: 1080x1920 vertical MP4 (libx264, CRF 23, AAC audio)
-11. Returns video as n8n binary data
-12. Cleans up temp files
+1. Writes voice + music binaries from input to `/tmp/n8n_compose_*/`
+2. Probes voice duration via `ffmpeg -i voice.mp3 2>&1` + regex (`/Duration: (\d+):(\d+):([\d.]+)/`)
+3. Downloads 6 video clips via sandbox-escaped Node.js downloader with:
+   - HTTP status code validation
+   - `r.on('error')` stream error handling
+   - 60s per-request socket timeout
+   - 3 retry attempts with 5s delay each
+   - 300s total exec timeout
+4. **Pass 1** (per clip): scale 1080:1920 (Lanczos) → crop → unsharp → color grade → minterpolate 60fps → setpts slowdown → trim → fps=30 → encode intermediate MP4
+5. **Audio mix**: voice (100%) + music (28% volume), trimmed to voice duration, mixed to AAC
+6. **Pass 2**: xfade stitch (0.3s fade transitions) → final encode libx264 CRF 18 slow preset
+7. **No burned captions** — YouTube auto-generated captions used instead
 
-**Estimated render time**: 30-60 seconds for stitching + audio overlay.
+**Key FFmpeg details**:
+- `minterpolate` runs at native clip fps BEFORE `setpts` slowdown (prevents PTS corruption)
+- Save to intermediate `.mp4` between passes resets PTS (required for xfade)
+- `fps=30` comes AFTER `trim+setpts` in filter chain
 
-### Node 13: Export Video Locally
+**Output**: Binary `video` (MP4, 1080×1920) + JSON with duration, numClips, title, script
+
+### Node 14: Export Video Locally
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `exportLocal`
 
-**Logic**:
-1. Sanitizes the video title into a safe folder name (alphanumeric + underscores, max 80 chars)
-2. Creates `videos/{timestamp}_{sanitized-title}/` on the Windows host (mounted at `/home/node/videos` in Docker)
-3. Writes `video.mp4` — the final composed 1080x1920 MP4
-4. Writes `upload-info.txt` containing:
-   - Full script (voiceover text)
-   - YouTube: title with `#Shorts`, description, comma-separated tags, hashtags, category/privacy settings
-   - Instagram: ready-to-paste caption with title + emoji + description + 20 tech hashtags
-5. Passes binary + all JSON data through unchanged
+Creates `videos/{ISO-timestamp}_{sanitized-title}/` (mounted from `D:\Github Clones\N8nYtAutomation\videos\` on Windows host via Docker volume). Writes:
+- `video.mp4` — final 1080×1920 MP4
+- `upload-info.txt` — script, YouTube title/description/tags, Instagram caption with 20 hashtags
 
-**Output folder structure**:
-```
-videos/
-└── 2026-03-28T09-00-00_OpenAI_Announces_GPT6/
-    ├── video.mp4         ← final composed video
-    └── upload-info.txt   ← copy-paste ready upload info for YouTube + Instagram
-```
-
-**Requires**: `D:\N8n\docker-compose.yml` volume mount `d:/Github Clones/N8nYtAutomation/videos:/home/node/videos` and `docker compose restart`.
-
-### Node 14: Prepare YouTube Metadata
+### Node 15: Prepare YouTube Metadata
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `prepareYT`
 
-Appends `#Shorts` to title, adds hashtags to description, sets category 28 (Science & Technology), truncates title to 100 chars. Passes through binary video data.
+Appends `#Shorts` to title, formats description with hashtags, sets category 28 (Science & Technology). Passes binary through.
 
-### Node 14: Upload to YouTube
+### Node 16: Upload to YouTube
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `youtubeUpload`
 - **Credential**: YouTube OAuth2 API
 
-Resource: `video`, Operation: `upload`. Binary property: `video`. Privacy: `public` (change to `unlisted` for testing). Category: 28. Tags joined with commas, notifySubscribers: true.
+Resource: `video`, Operation: `upload`. Binary: `video`. Privacy: `public`. Category: 28. `notifySubscribers: true`.
 
-### Node 15: Add to Playlist
+### Node 17: Add to Playlist
 - **Type**: `n8n-nodes-base.youTube` (v1)
 - **ID**: `addToPlaylist`
-- **Credential**: YouTube OAuth2 API (same as Upload to YouTube)
+- **Credential**: YouTube OAuth2 API
 
-Resource: `playlistItem`. `playlistId`: `=YOUR_PLAYLIST_ID` — **SETUP REQUIRED** (use expression format `=PLxxxxxxx` to avoid dropdown loading error). `videoId`: `={{ $json.uploadId || $json.id || $json.videoId }}`.
+Resource: `playlistItem`. `playlistId`: use expression format `=PLxxxxxxx` (avoids dropdown loading error). `videoId`: `={{ $json.uploadId || $json.id }}`.
 
-### Node 16: Success Output
+### Node 18: Success Output
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `successOutput`
 
-Returns `videoUrl`, `videoId`, `uploadTime`. Constructs YouTube Shorts URL from video ID.
+Returns `youtubeUrl`, `videoId`, `uploadTime`.
 
 ## Connection Map
 
 ```
-Source Node                            -> Target Node                            | Type
-------------------------------------------------------------------------------------
-Manual Trigger                         -> Fetch Reddit Posts                      | main
-Fetch Reddit Posts                     -> Format Reddit Data                      | main
-Format Reddit Data                     -> Fetch HN Posts                          | main
-Fetch HN Posts                         -> Pick Best Story                         | main
-Pick Best Story                        -> Prepare Story Data                      | main
-Prepare Story Data                     -> Generate Script (Gemini)                | main
-Generate Script (Gemini)               -> Parse Script JSON                       | main
-Parse Script JSON                      -> Generate Images (ComfyUI SDXL)          | main
-Generate Images (ComfyUI SDXL)         -> Animate Images (ComfyUI Hunyuan)        | main
-Animate Images (ComfyUI Hunyuan)       -> Generate Voiceover (Gemini TTS)         | main
-Generate Voiceover (Gemini TTS)        -> Compose Video (FFmpeg)                  | main
-Compose Video (FFmpeg)                 -> Prepare YouTube Metadata                 | main
-Prepare YouTube Metadata               -> Upload to YouTube                       | main
-Upload to YouTube                      -> Add to Playlist                         | main
-Add to Playlist                        -> Success Output                          | main
+Source Node                              -> Target Node
+-----------------------------------------------------------------------
+Manual Trigger                           -> Fetch Reddit Posts
+Fetch Reddit Posts                       -> Format Reddit Data
+Format Reddit Data                       -> Fetch HN Posts
+Fetch HN Posts                           -> Pick Best Story
+Pick Best Story                          -> Prepare Story Data
+Prepare Story Data                       -> Generate Script (Gemini)
+Generate Script (Gemini)                 -> Parse Script JSON
+Parse Script JSON                        -> Generate Images (SD3/Flux)
+Generate Images (SD3/Flux)               -> Generate Video Clips (fal.ai Kling)
+Generate Video Clips (fal.ai Kling)      -> Generate Voiceover (ElevenLabs)
+Generate Voiceover (ElevenLabs)          -> Generate Background Music (Stable Audio)
+Generate Background Music (Stable Audio) -> Compose Video (FFmpeg)
+Compose Video (FFmpeg)                   -> Export Video Locally
+Export Video Locally                     -> Prepare YouTube Metadata
+Prepare YouTube Metadata                 -> Upload to YouTube
+Upload to YouTube                        -> Add to Playlist
+Add to Playlist                          -> Success Output
 ```
 
 ## Required Credentials
 
-| # | Credential Name | Type | Where to Get | Used By |
-|---|---|---|---|---|
-| 1 | Google AI Studio (Gemini) | API Key in URL | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Script Gen, Voiceover TTS |
-| 2 | ComfyUI | Local API (no auth) | Local install — see [comfyui/README.md](../comfyui/README.md) | Generate Images, Animate Images |
-| 3 | YouTube OAuth2 API | OAuth2 | Google Cloud Console → YouTube Data API v3 → OAuth2 credentials | Upload to YouTube, Add to Playlist |
+All cloud API keys are stored in `keys.json` (repo root, mounted read-only at `/home/node/keys.json` in Docker):
 
-**Note**: ComfyUI runs locally — no API keys needed. SDXL base 1.0 and HunyuanVideo I2V models must be downloaded (~24GB).
+| # | keys.json field | Where to Get | Used By | Cost/run |
+|---|---|---|---|---|
+| 1 | `geminiApiKey` | [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys) — free | Generate Script | $0.00 |
+| 2 | `falApiKey` | [fal.ai/dashboard](https://fal.ai/dashboard) | Images (fallback) + Video Clips + Music | ~$2.47 |
+| 3 | `elevenLabsApiKey` | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) — Starter+ | Generate Voiceover | ~$0.17 |
+| 4 | `stabilityApiKey` | [platform.stability.ai/account/keys](https://platform.stability.ai/account/keys) — optional | Generate Images (primary, ~78 credits/run) | ~$0.78 |
+| 5 | `youtubePlaylistId` | YouTube playlist URL after `list=` | Add to Playlist | — |
+| 6 | YouTube OAuth2 | Google Cloud Console → YouTube Data API v3 | Upload to YouTube, Add to Playlist | free |
+
+**No GPU or ComfyUI required** — all AI generation uses cloud APIs.
 
 ## Troubleshooting
 
-### FFmpeg / Video composition issues
-- FFmpeg is baked into the custom Docker image via `docker compose up -d` (see parent directory Dockerfile)
-- If FFmpeg is missing, rebuild: `docker compose build && docker compose up -d`
-- The Code node requires `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` env var
-- Temp files are written to `/tmp/` and cleaned up automatically
-- If n8n crashes with OOM, the video may be too large — check image count and duration
+### Script generation issues
+- "No JSON object found": Gemini truncated response — `thinkingBudget: 0` + `maxOutputTokens: 8192` should prevent this
+- "Script too short": word count below 65 minimum — re-run, Gemini occasionally goes short
+- Gemini 3 Flash rate limit: 5 RPM on free tier, sufficient for 1 run per minute
 
-### Gemini API issues
-- "API key not valid": Verify at [aistudio.google.com/apikeys](https://aistudio.google.com/apikeys)
-- 429 Too Many Requests: Free tier rate limit hit — wait a few minutes
-- Gemini 3 Flash has 5 RPM on free tier — sufficient for 1 script + 1 voiceover per run
+### Image generation issues
+- SD3 balance check failed → automatically falls back to fal.ai Flux (logged in stderr)
+- "FATAL: SD3 403": Stability AI key expired or revoked — check platform.stability.ai
+- Mixed image styles: impossible — provider selected once before loop, all 6 images use same provider
 
-### Image generation issues (ComfyUI SDXL)
-- Verify ComfyUI is running: `curl http://localhost:8188/system_stats`
-- "Connection refused": ComfyUI not running or firewall blocking port 8188. Run `comfyui\setup\run_api_server.bat` and check Windows Firewall
-- "Model not found": SDXL base 1.0 model not downloaded. Run `comfyui\setup\install-models.ps1`
-- OOM errors: Close other GPU applications. SDXL base needs ~5-6GB VRAM
-- Images are 768x1344 — FFmpeg upscales to 1080x1920 in the video composition step
-- Task runner timeout set to 9000s (150 min) via `N8N_RUNNERS_TASK_TIMEOUT=9000` in docker-compose.yml (value is in seconds)
+### Video clip issues
+- "Clip download failed" + retry messages: fal.ai CDN URL expired (clips expire after ~24h) — re-run
+- "Kling timeout": Kling generation taking >1800s — rare, re-run
+- "Kling submit error 422": `image_url` format issue — data URIs and CDN URLs both confirmed working
 
-### Video animation issues (ComfyUI Hunyuan)
-- Each clip takes ~7-12 minutes — total for 8 clips is ~60-100 minutes. This is normal
-- OOM on HunyuanVideo: Reduce `temporal_size` from 32 to 16 in the workflow template, or reduce frames from 49 to 33
-- WEBP output issues: If FFmpeg can't decode, change `SaveAnimatedWEBP` to `SaveAnimatedPNG` in `comfyui/workflows/hunyuan-i2v-gguf-q4.json`
-- Time budget exceeded: If total exceeds 9000s budget (150 min), remaining clips get static MP4 fallback
-- VRAM: HunyuanVideo I2V needs ~7-8GB VRAM. Cannot run simultaneously with SDXL (ComfyUI auto-swaps models)
+### Music generation issues
+- Music timeout: generation at `steps: 100` takes ~70-90s + download — 300s exec timeout provides headroom
+- "fal.ai Stable Audio error 4xx": check `falApiKey` in keys.json
 
-### YouTube upload fails
+### Video composition issues
+- FFmpeg not found: rebuild Docker image (`docker compose build && docker compose up -d`)
+- OOM: `maxBuffer: 500MB` for final encode — only hits on extremely long videos
+- minterpolate slow: ~5-10 min for 6 clips is normal at `mi_mode=mci`
+
+### YouTube upload issues
 - Re-authorize OAuth2 if token expired
-- Quota: 10,000 units/day, upload = 1,600 units (~6 uploads/day)
-- Video must be under 60 seconds and include `#Shorts`
+- Quota: 10,000 units/day, upload = 1,600 units (~6 uploads/day max)
+- Video must be ≤60s and include `#Shorts` in title
 
 ## Modification Guide
 
 | What | How |
 |---|---|
-| Change news sources | Edit Fetch Reddit Posts URL or Pick Best Story code |
-| Change script length | Edit Generate Script (Gemini) prompt word count target (currently 110-120 words) |
-| Change TTS voice | Edit Generate Voiceover jsonBody `voiceName` field. Options: `Kore`, `Charon`, `Fenrir`, `Aoede`, `Puck`, `Zephyr` |
-| Change number of images | Edit Generate Script prompt (currently 8 IMAGE_PROMPTS) |
-| Change image model | Edit the FLUX workflow template in `comfyui/workflows/flux-nf4-text-to-image.json` |
-| Change video model | Edit the HunyuanVideo workflow template in `comfyui/workflows/hunyuan-i2v-gguf-q4.json` |
-| Reduce VRAM usage | Lower `temporal_size` (32→16) or frames (49→33) in the HunyuanVideo template |
-| Schedule daily runs | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *`) |
-| Change playlist | Edit Add to Playlist node `playlistId` field |
-| Remove playlist | Delete Add to Playlist node, connect Upload to YouTube → Success Output |
-| Multi-platform posting | Add Blotato node after YouTube upload |
+| Change script length | Edit `scriptGen` system prompt word count target (currently 75-90 words) |
+| Change TTS voice | Edit `voiceover` node voice ID in URL path. Options: ErXwobaYiN019PkySvjV (Antoni), others at elevenlabs.io |
+| Change music style | Edit `generateMusic` prompt string |
+| Change number of clips | Edit `generateImages` imagePrompts count + `generateVideo` motions array |
+| Force fal.ai Flux images | Remove `stabilityApiKey` from keys.json |
+| Change privacy | Edit `youtubeUpload` node privacyStatus field (`public`/`unlisted`/`private`) |
+| Change playlist | Edit `addToPlaylist` node `playlistId` field (use `=PLxxxxxxx` expression format) |
+| Remove playlist step | Delete `addToPlaylist` node, connect `Upload to YouTube` → `Success Output` |
+| Add schedule | Replace Manual Trigger with Schedule Trigger (cron: `0 15 * * *` for 8:30 PM IST) |
+| Reset duplicate history | Delete `/home/node/videos/last_stories.json` in Docker |
 
 ## Version History
-- **v7.2** (2026-03-28): Added `exportLocal` node (17 nodes). Saves `video.mp4` + `upload-info.txt` to `videos/{timestamp}_{title}/` after every run. Requires volume mount in `D:\N8n\docker-compose.yml` + `docker compose restart`.
-- **v7.1** (2026-03-28): Removed Instagram Reels cross-posting and Schedule Trigger. Back to 16 nodes, manual trigger only.
-- **v7.0** (2026-03-14): Added Instagram Reels cross-posting. 16→26 nodes (+10 new nodes, +10 connections). Fork after `composeVideo` — YouTube branch unchanged; Instagram branch posts 4x/week (Mon/Wed/Fri/Sun) gated by IF node. Uses Facebook Graph API Resumable Upload (no cloud storage). Same video re-used, Instagram-specific captions (emojis, 20 hashtags, no #Shorts). Schedule Trigger (9AM daily) added alongside Manual Trigger. New placeholder values: `YOUR_IG_USER_ID` + `YOUR_IG_ACCESS_TOKEN` in `prepareInsta` node.
-- **v6.9** (2026-03-09): scriptGen model updated to `gemini-3-flash-preview` (Gemini 3 Flash). TTS stays on `gemini-2.5-flash-preview-tts`. **Full end-to-end run confirmed successful.**
-- **v6.8** (2026-03-09): Script stays 110-120 words (~45s narration). `N8N_RUNNERS_TASK_TIMEOUT` 7200→9000 (150 min). animateImages `GLOBAL_BUDGET_MS` 6000000→9000000ms (150 min), exec timeout 6600000→9600000ms (160 min). Runtime: ~80-110 min.
-- **v6.7** (2026-03-09): HunyuanVideo frames 25→49 (2.04s clips). Script 80-95→110-120 words. Word count validation (throws if <90). Poll timeout 1200s→1800s. Fixed successOutput videoId reading `contentDetails.videoId`.
-- **v6.6** (2026-03-09): Fixed minterpolate+xfade — two-pass compose: Pass 1 minterpolate at native 24fps→60fps + setpts + save intermediate; Pass 2 xfade on clean PTS. Compose ~8-12 min.
-- **v6.5** (2026-03-08): Quality pass: generateImages 20→30 steps, dpmpp_2m+karras+cfg7.5. animateImages KSampler 15→20 steps. composeVideo: Lanczos, unsharp, color grade, slow encoder, 192k audio.
-- **v6.4** (2026-03-08): Fixed jittery slow-motion with `minterpolate`. Fixed animated WEBP decode: replaced `SaveAnimatedWEBP` with `SaveImage` (PNG frames), assemble to MP4 at 24fps.
-- **v6.3** (2026-03-08): Fixed `fps=30` must come after `trim+setpts`. Fixed `ffprobe` permissions in Docker — replaced with `ffmpeg -i` + regex.
-- **v6.2** (2026-03-08): Fixed HunyuanVideo I2V 12-node workflow structure. HunyuanImageToVideo is conditioning node — requires separate KSampler. Fixed model paths and param names.
-- **v6.1** (2026-03-07): Replaced FLUX.1 Dev NF4 with SDXL base 1.0. HunyuanVideo 49→25 frames, 20→15 steps. Runtime: 40-60 min.
-- **v6.0** (2026-03-02): Local AI generation via ComfyUI. Replaced cloud image APIs (Pollinations/Pexels/gradient) with FLUX.1 Dev NF4 text-to-image (768x1344, ~60s/image). Added HunyuanVideo I2V Q4 GGUF image-to-video animation (544x960, 49 frames, ~7-12min/clip). Replaced FFmpeg Ken Burns zoom/pan with video clip stitching + slow-stretch effect. New node: Animate Images (ComfyUI Hunyuan). Rewritten nodes: Generate Images (ComfyUI FLUX), Compose Video (FFmpeg). Docker timeout increased to 2 hours. 16 nodes, 15 connections. Runtime: 75-115 min. $0.00/month (fully local).
-- **v5.8** (2026-02-25): Fixed Pollinations.ai URL — migrated from legacy `image.pollinations.ai/prompt/` (down since Feb 13) to new unified `gen.pollinations.ai/image/` endpoint. API keys now hardcoded in Code node (n8n sandbox blocks env var access). Added provider tracking output (`providers`, `providerSummary`). Reduced inter-image delay from 5s to 3s. 15 nodes, 14 connections. $0/month.
-- **v5.7** (2026-02-25): Removed Together.ai (no longer free). Pollinations.ai with secret key is now primary provider, Pexels stock photos fallback, FFmpeg gradient last resort. 3-provider stack. Removed `TOGETHER_API_KEY` env var. 15 nodes, 14 connections. $0/month.
-- **v5.6** (2026-02-25): Overhauled image generation with 4-provider fallback. Added Together.ai, Pollinations.ai secret key, Pexels stock photos, FFmpeg gradient. Global 780s time budget prevents timeout. 15 nodes, 14 connections.
-- **v5.5** (2026-02-24): Fixed Gemini returning wrong format (STORY_TITLE/KEY_FACTS instead of SCRIPT/TITLE/IMAGE_PROMPTS). Removed conflicting format instructions from Pick Best Story prompt. Added system instruction to Generate Script node enforcing exact output keys. 15 nodes, 14 connections.
-- **v5.4** (2026-02-24): Fixed Pollinations.ai rate limiting (6/8 images falling back to gradient). Increased delays and retries. Added `N8N_RUNNERS_HEARTBEAT_INTERVAL=300` to prevent FFmpeg render kill. 15 nodes, 14 connections.
-- **v5.3** (2026-02-24): Fixed FFmpeg gradient fallback syntax error (unescaped double quotes). Added auto-retry (3 attempts, 5s delay) to Generate Script node for transient Gemini 503 errors. 15 nodes, 14 connections.
-- **v5.2** (2026-02-23): Robust Parse Script JSON — `findScriptData()` recursively searches for SCRIPT field in any nesting structure. Handles flat, wrapped (`YOUTUBE_SHORT`), and nested (`story_analysis` + `youtube_short_script`) Gemini response formats. Case-insensitive key matching.
-- **v5.1** (2026-02-23): Triple-provider image fallback: Pollinations.ai → HuggingFace FLUX.1 → FFmpeg gradient. Workflow never fails on image generation. Task runner timeout increased to 900s. Synced export JSON with deployed code.
-- **v5.0** (2026-02-23): Switched image generation from Gemini (0 free quota) to HuggingFace Spaces FLUX.1 (free, no API key). Switched script generation from Gemini 2.0 Flash (0 quota) to Gemini 2.5 Flash (5 RPM). Merged Split Image Prompts + Generate Images + Collect All Images into single Code node. 15 nodes, 14 connections. $0.00/video.
-- **v4.0** (2026-02-16): Migrated to completely free stack. Replaced OpenAI (GPT-5, DALL-E 3, TTS) with Gemini 2.0 Flash + 2.5 Flash Image + 2.5 Flash TTS (single Google AI Studio API key). Replaced Creatomate with local FFmpeg Ken Burns effect. 8 images instead of 4. 17 nodes, 16 connections. $0.00/video.
-- **v3.1** (2026-02-09): Added Add to Playlist node — videos are automatically added to a YouTube playlist after upload. 24 nodes, 23 connections.
-- **v3.0** (2026-02-09): Audio upload via tmpfiles.org (Creatomate requires real URLs, not data URIs). Split video data prep into 3 lightweight nodes to avoid OOM. Privacy set to public. 23 nodes, 22 connections.
-- **v2.0** (2026-02-08): Replaced AI Agent with direct HTTP fetches. DALL-E via HTTP Request for URL output. Added render validation. 21 nodes.
-- **v1.0** (2026-02-07): Initial creation. 18 nodes, manual trigger, Creatomate free tier.
+
+- **v8.4** (2026-04-11): 10-day test prep. `pickStory`: duplicate detection (word-overlap against 14-day history in `/home/node/videos/last_stories.json`), top stories 6→3. `generateImages`: renamed node to "Generate Images (SD3/Flux)", explicit stderr log on Flux fallback. `scriptGen`: reads `geminiApiKey` directly from keys.json (no longer passed via node output), word target 90-120→75-90 words, `thinkingBudget:0` added. `parseScript`: min word count 80→65. `parseAgent`: removed `geminiApiKey` from output (prevents API key leakage into n8n execution logs). `composeVideo`: removed .ass captions entirely (YouTube auto-captions), download retry logic (3 attempts, 5s delay, HTTP status validation, stream error handling), 300s exec timeout.
+- **v8.3** (2026-04-10): Image + music provider changes. `generateImages`: Stability AI SD3 as primary (balance check → data URI output), fal.ai Flux fallback. `generateMusic`: switched from Stability AI (404, endpoint removed) to fal.ai Stable Audio (WAV→MP3 via FFmpeg). `scriptGen`: converted to Code node with sandbox escape (HTTP Request node causing 400s). `parseScript`: updated for Gemini 3 thinking model. `generateVideo`: fixed polling URL (use status_url/response_url from submit response directly).
+- **v8.2** (2026-04-08): API fixes. ElevenLabs `mp3_44100_192` → `mp3_44100_128` (Starter plan cap). Stable Audio: added `model: stable-audio-2.5` field. All keys migrated to `keys.json`. All 4 cloud endpoints verified working.
+- **v8.1** (2026-04-06): Script improvements. `pickStory` scores Reddit+HN by engagement + viral keyword boost (30 keywords, +300 each). `parseAgent` passes ranked list as `rawStory`. Gemini prompt 90-120 words, HECK beat-tied image prompts. `parseScript` min 80 words, min 3 tags.
+- **v8.0** (2026-04-06): Full cloud AI overhaul. Replaced ComfyUI SDXL+HunyuanVideo with fal.ai Flux Schnell (images) + Kling v1.6 I2V (video). Replaced Gemini TTS with ElevenLabs (MP3, no PCM). Added fal.ai Stable Audio background music (45s, 28% mix). HECK-loop script. 17→18 nodes. Runtime 80-110→35-70 min.
+- **v7.2** (2026-03-28): Added `exportLocal` node. Saves `video.mp4` + `upload-info.txt` to `videos/{timestamp}_{title}/`. Requires volume mount in `D:\N8n\docker-compose.yml`.
+- **v7.1** (2026-03-28): Removed Instagram Reels and Schedule Trigger. Back to 16 nodes, manual trigger only.
+- **v7.0** (2026-03-14): Added Instagram Reels cross-posting via Facebook Graph API Resumable Upload. 16→26 nodes. (Reverted in v7.1)
+- **v6.9** (2026-03-09): Full end-to-end run confirmed working. `scriptGen` → `gemini-3-flash-preview`.
+- **v6.0–v6.8** (2026-03-02–09): Local AI via ComfyUI (SDXL images + HunyuanVideo I2V). Replaced in v8.0.
+- **v5.x** (2026-02-23–25): Various cloud image providers (Pollinations, HuggingFace FLUX, Pexels). Replaced in v6.0.
+- **v4.0** (2026-02-16): Migrated to free stack (Gemini Flash + FFmpeg). Replaced in v5.0.
+- **v1.0–v3.1** (2026-02-07–09): Initial builds with OpenAI + Creatomate.

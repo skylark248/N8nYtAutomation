@@ -28,16 +28,19 @@ The n8n Docker instance lives at **`D:\N8n\`** (separate from this repo). That d
 # First time only: docker compose build  (builds custom image with FFmpeg)
 docker compose up -d
 
-# 2. Get a Google AI Studio API key from https://aistudio.google.com/apikeys
-
-# 3. Import the workflow
+# 2. Import the workflow
 # Open http://localhost:5678 -> Import from file -> select exports/youtube-shorts-tech-news.json
 
-# 4. Replace YOUR_GEMINI_API_KEY in 2 nodes (Script, TTS) with your key
+# 3. Replace placeholder API keys directly in node code (see Placeholder Values table below):
+#    - YOUR_GEMINI_API_KEY   → in Generate Script node URL param
+#    - YOUR_FAL_API_KEY      → in Generate Images + Generate Video Clips nodes
+#    - YOUR_ELEVENLABS_API_KEY → in Generate Voiceover node
+#    - YOUR_STABILITY_API_KEY  → in Generate Background Music node (optional)
+#    - =YOUR_PLAYLIST_ID    → in Add to Playlist node
 
-# 5. Configure YouTube OAuth2 credential (see docs/setup-guide.md)
+# 4. Configure YouTube OAuth2 credential (see docs/setup-guide.md)
 
-# 6. Test run with unlisted privacy
+# 5. Test run with unlisted privacy, then switch to public
 ```
 
 ## Docker Setup
@@ -87,7 +90,9 @@ claude mcp add n8n-mcp \
 - **Workflow creation**: Create with all nodes and connections in one `n8n_create_workflow` call for best results, then fix individual nodes with `n8n_update_partial_workflow`.
 - **Reddit 403 Forbidden**: Reddit blocks bot User-Agents. Use `old.reddit.com` + a Chrome browser UA string + `Accept: application/json` header.
 - **Gemini prompt format**: The `combinedPrompt` passed to Gemini for story selection must be raw headlines only — adding format instructions there causes Gemini JSON mode to return the wrong keys (STORY_TITLE/KEY_FACTS instead of SCRIPT/TITLE/IMAGE_PROMPTS).
-- **API keys in Code nodes**: n8n sandbox blocks `process.env` access at runtime. Hardcode image API keys directly in the Code node (same approach as Gemini key in URL parameters).
+- **API keys in Code nodes**: n8n sandbox blocks `process.env` access at runtime. All API keys are stored in `keys.json` (mounted at `/home/node/keys.json` in Docker) and read at runtime via `JSON.parse(fs.readFileSync('/home/node/keys.json', 'utf8'))`. Do NOT hardcode keys in node code.
+- **Stable Audio model parameter**: Must include `model: stable-audio-2.5` as a multipart form field. Omitting it defaults to `stable-audio-2` (same cost: 20 credits/gen flat for 2.5, `17 + 0.06*steps` for 2.0 at default 50 steps = same 20 credits). Use 2.5 — it's the newer model.
+- **ElevenLabs output format tier**: `mp3_44100_192` requires Creator plan. Starter plan max is `mp3_44100_128`. Use `mp3_44100_128` to avoid 403 errors on Starter tier.
 - **Background agents**: Bash commands are auto-denied when agents run in background mode. Use the Write tool directly for file operations.
 - **ComfyUI from Docker**: n8n Docker container reaches ComfyUI on Windows host via `http://host.docker.internal:8188`. Requires `extra_hosts: ["host.docker.internal:host-gateway"]` in docker-compose.yml and Windows Firewall rule for port 8188.
 - **ComfyUI embedded Python**: ComfyUI uses its own Python at `C:\ComfyUI\python_embeded\python.exe` (Python 3.13). The `python` command in bash resolves to the Microsoft Store stub and fails. Always use the full path: `/c/ComfyUI/python_embeded/python.exe script.py`
@@ -111,6 +116,16 @@ claude mcp add n8n-mcp \
 - **`docker exec` path conversion in git bash (Windows)**: MSYS automatically converts Unix paths like `/tmp/` to Windows paths (`C:/Users/.../Temp/`), breaking docker exec commands. Prefix with `MSYS_NO_PATHCONV=1`: `MSYS_NO_PATHCONV=1 docker exec container bash -c "..."`.
 - **SDXL quality settings**: For best image quality on 8GB VRAM — use `dpmpp_2m` sampler + `karras` scheduler + 30 steps + cfg 7.5. Significantly sharper than default `euler` + `normal` + 20 steps. Each image takes ~35-45s vs ~25-30s.
 - **minterpolate is slow**: `minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1` generates true motion-estimated frames but takes ~5-10 min for 8 clips. Raise FFmpeg timeout to 600s in the Code node. Worth it — eliminates the jittery frame-duplication look from slow-motion stretching.
+- **Stability AI Stable Audio API removed**: `api.stability.ai/v2beta/stable-audio/generate` returns 404 (endpoint removed as of April 2026). Their OpenAPI spec has no audio endpoints. Image endpoints (`/v2beta/stable-image/generate/sd3`, `/ultra`, `/core`) and 3D still work. Use fal.ai Stable Audio (`fal.run/fal-ai/stable-audio`) instead.
+- **Stability AI SD3 returns base64**: Response JSON has `{image: "<base64>", finish_reason: "SUCCESS", seed: N}`. No URL — must convert to data URI (`data:image/jpeg;base64,...`) for downstream nodes.
+- **fal.ai Kling accepts data URIs**: `image_url` parameter accepts `data:image/jpeg;base64,...` — no need to host images on a CDN. Tested and confirmed working.
+- **Stability AI SD3 cost**: ~13 credits per image (9:16 aspect ratio, JPEG output). 1,025 credits ≈ $10 ≈ 78 images ≈ 13 full runs.
+- **Sandbox escape multipart escaping**: Building multipart form data in the `js` array (spawned script) causes double-quote escaping nightmares (`\\"` vs `\\\"` across 3 layers of string encoding). Fix: build multipart body in the n8n Code node itself, base64-encode it, pass via cfg.json. Spawned script just decodes and POSTs.
+- **fal.ai Stable Audio**: Endpoint `fal.run/fal-ai/stable-audio`, JSON body `{prompt, seconds_total, steps}`, returns `{audio_file: {url}}` (WAV). Convert to MP3 with FFmpeg. Same `Key {falApiKey}` auth as other fal.ai endpoints. Generation at steps=100 takes ~70-90s — exec timeout must be ≥300s.
+- **Gemini thinking model token truncation**: `gemini-3-flash-preview` is a thinking model — thinking tokens count against `maxOutputTokens`. With 1500-2500 tokens, thinking consumes most of the budget, leaving too few for actual output → JSON truncated, no closing `}`. Fix: set `thinkingConfig: { thinkingBudget: 0 }` to disable thinking, and `maxOutputTokens: 8192`.
+- **API keys in n8n execution logs**: Any field passed through node JSON output is stored in n8n execution history in plain text. Never pass API keys through node outputs. Read them directly from `keys.json` in each node that needs them.
+- **Duplicate story detection**: `pickStory` writes chosen story title to `/home/node/videos/last_stories.json` (14-day rolling history). Uses 60% word-overlap check (words ≥4 chars). To reset: delete the file inside Docker. Falls back to top 3 regardless if all stories are duplicates.
+- **ASS subtitles vs SRT in filter_complex**: `subtitles=file.srt` with `force_style` — commas in style values are FFmpeg filter separators and break parsing. Either escape with `\,` or switch to `.ass` file with `ass=file.ass` filter (style embedded in file header, no escaping needed). Current pipeline uses no burned captions — YouTube auto-captions instead.
 
 ### MCP Troubleshooting
 
@@ -164,30 +179,27 @@ claude mcp add comfyui-mcp \
 ### YouTube Shorts - Tech News Automation
 - **Status**: Inactive (manual trigger)
 - **n8n Workflow ID**: `zuFXklAfWmiZqTZh`
-- **Nodes**: 17 | **Connections**: 16
-- **Estimated Runtime**: 80-110 minutes per video (local AI generation) | **Monthly Cost**: $0.00
+- **Nodes**: 18 | **Connections**: 17
+- **Estimated Runtime**: 25-40 minutes per video (cloud AI) | **Monthly Cost**: ~$44/month for 30 Shorts
 - **Export File**: `exports/youtube-shorts-tech-news.json`
+- **Version**: v8.4
 - **Documentation**: `docs/workflow-reference.md` (full node-by-node breakdown)
 - **Setup Guide**: `docs/setup-guide.md` (credential configuration)
 
-**Pipeline**: Fetch news (Reddit + HN) → Generate script (Gemini 3 Flash) → Generate images (ComfyUI SDXL base) → Animate images (ComfyUI HunyuanVideo I2V 49 frames) → Voiceover (Gemini 2.5 Flash TTS Preview) → Compose video (FFmpeg stitch + audio) → **Export video locally** (video.mp4 + upload-info.txt to `videos/{timestamp}_{title}/`) → Upload to YouTube (public) → Add to playlist
+**Pipeline**: Fetch news (Reddit + HN) → Pick best story (top 3, 14-day dupe check) → Generate script (Gemini 3 Flash, HECK-loop, 75-90 words) → Generate images (Stability AI SD3 primary / fal.ai Flux Schnell fallback, 6×) → Animate images (fal.ai Kling I2V, 6×5s clips) → Voiceover (ElevenLabs TTS, MP3) → Background music (fal.ai Stable Audio, 45s) → Compose video (FFmpeg: minterpolate + xfade + music mix, no burned captions) → Export locally → Upload to YouTube (public) → Add to playlist
 
-**Required Credentials** (configure in n8n before running):
-1. **Google AI Studio API Key** - Gemini script + TTS (passed in URL query params, no n8n credential needed)
-2. **YouTube OAuth2** - upload + playlist. Enable YouTube Data API v3. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
+**Required Credentials** (add to `keys.json` — mounted at `/home/node/keys.json` in Docker):
+- `geminiApiKey` — Google AI Studio API key (Gemini script generation, free)
+- `falApiKey` — fal.ai key (images fallback + video clips + music, ~$2.19/run)
+- `elevenLabsApiKey` — ElevenLabs key (voiceover, Starter plan+, ~$0.17/run)
+- `stabilityApiKey` — Stability AI key (images primary — auto-fallback to fal.ai when credits exhausted)
+- `youtubePlaylistId` — YouTube playlist ID (optional)
 
-**Local AI Requirements**:
-- **ComfyUI** running on Windows host at `http://host.docker.internal:8188` with SDXL base + HunyuanVideo I2V models (~24GB)
-- **NVIDIA GPU** with 8GB+ VRAM (RTX 3070 Ti or similar)
-- **SDXL model**: `sd_xl_base_1.0.safetensors` (~6.5GB) in `C:\ComfyUI\ComfyUI\models\checkpoints\`
-- **HunyuanVideo GGUF**: `hunyuan-video-i2v-720p-Q4_K_M.gguf` in `models\unet\`
-- **HunyuanVideo text encoder**: `models\clip\split_files\text_encoder\llava_llama3_fp8_scaled.safetensors` (~5GB)
-- **HunyuanVideo CLIP vision**: `models\clip_vision\split_files\clip_vision\llava_llama3_vision.safetensors` (~1.2GB)
-- **HunyuanVideo VAE**: `models\vae\split_files\vae\hunyuan_video_vae_bf16.safetensors` (~222MB)
-- **CLIP-L** (shared): `models\clip\clip_l.safetensors` (~235MB)
-- See `comfyui/README.md` for full setup instructions
+**YouTube OAuth2** - configure in n8n credential UI. Enable YouTube Data API v3. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
 
-### Node List (17 nodes)
+**No local GPU required** — all AI generation uses cloud APIs (fal.ai, ElevenLabs, Stability AI)
+
+### Node List (18 nodes)
 
 | # | Node Name | Type | ID | Purpose |
 |---|---|---|---|---|
@@ -195,26 +207,44 @@ claude mcp add comfyui-mcp \
 | 2 | Fetch Reddit Posts | httpRequest | `fetchReddit` | GET old.reddit.com/r/technology/hot.json?limit=15 |
 | 3 | Format Reddit Data | code | `formatReddit` | Extract top 10 non-stickied posts |
 | 4 | Fetch HN Posts | httpRequest | `fetchHN` | GET hn.algolia.com/api/v1/search?tags=front_page |
-| 5 | Pick Best Story | code | `pickStory` | Combine Reddit + HN into selection prompt |
-| 6 | Prepare Story Data | code | `parseAgent` | Format combined prompt with timestamp |
-| 7 | Generate Script (Gemini) | httpRequest | `scriptGen` | Gemini 3 Flash (`gemini-3-flash-preview`): script, title, tags, 8 image prompts |
-| 8 | Parse Script JSON | code | `parseScript` | Parse Gemini JSON, recursive findScriptData() fallback |
-| 9 | Generate Images (ComfyUI SDXL) | code | `generateImages` | SDXL base via ComfyUI API, 8x images (768x1344), ~30s each |
-| 10 | Animate Images (ComfyUI Hunyuan) | code | `animateImages` | HunyuanVideo I2V via ComfyUI API, 8x video clips (544x960, 49 frames) |
-| 11 | Generate Voiceover (Gemini TTS) | httpRequest | `voiceover` | Gemini 2.5 Flash TTS, voice Kore, PCM base64 |
-| 12 | Compose Video (FFmpeg) | code | `composeVideo` | Stitch clips + slow-stretch + crossfade + audio, 1080x1920 MP4 |
-| 13 | Export Video Locally | code | `exportLocal` | Save video.mp4 + upload-info.txt to `videos/{timestamp}_{title}/` on host |
-| 14 | Prepare YouTube Metadata | code | `prepareYT` | Append #Shorts, category 28, format tags |
-| 15 | Upload to YouTube | youTube | `youtubeUpload` | Upload video binary, privacy: public |
-| 16 | Add to Playlist | youTube | `addToPlaylist` | Add video to YouTube playlist |
-| 17 | Success Output | code | `successOutput` | Return videoUrl, videoId, uploadTime |
+| 5 | Pick Best Story | code | `pickStory` | Score + rank Reddit/HN by engagement, dedupe against 14-day history, output top 3 |
+| 6 | Prepare Story Data | code | `parseAgent` | Pass rankedStories as rawStory + timestamp (no API keys in output) |
+| 7 | Generate Script (Gemini) | code | `scriptGen` | Gemini 3 Flash: HECK-loop script (75-90 words), title, 6 tags, 6 beat-tied image prompts. thinkingBudget:0 |
+| 8 | Parse Script JSON | code | `parseScript` | Parse Gemini JSON, validate ≥65 words, ≥3 tags, ≥5 image prompts |
+| 9 | Generate Images (SD3/Flux) | code | `generateImages` | Stability AI SD3 primary (9:16, ~13 credits/img, data URI output) / fal.ai Flux Schnell fallback (768x1344, ~$0.09). Atomic balance check — all 6 images use same provider |
+| 10 | Generate Video Clips (fal.ai Kling) | code | `generateVideo` | Kling v1.6 I2V queue API: 6x clips (9:16, 5s each), sandbox escape, ~$2.10 total |
+| 11 | Generate Voiceover (ElevenLabs) | code | `voiceover` | ElevenLabs eleven_multilingual_v2, voice Antoni, MP3 128kbps, sandbox escape |
+| 12 | Generate Background Music (Stable Audio) | code | `generateMusic` | fal.ai Stable Audio: 45s WAV→MP3, 300s timeout, fallback silence if falApiKey not set |
+| 13 | Compose Video (FFmpeg) | code | `composeVideo` | Download clips (3 retries) + minterpolate + xfade + voice+music mix, 1080x1920, no burned captions |
+| 14 | Export Video Locally | code | `exportLocal` | Save video.mp4 + upload-info.txt to `videos/{timestamp}_{title}/` |
+| 15 | Prepare YouTube Metadata | code | `prepareYT` | Append #Shorts, category 28, format tags |
+| 16 | Upload to YouTube | youTube | `youtubeUpload` | Upload video binary, privacy: public |
+| 17 | Add to Playlist | youTube | `addToPlaylist` | Add video to YouTube playlist |
+| 18 | Success Output | code | `successOutput` | Return youtubeUrl, uploadTime |
 
-### Placeholder Values to Configure
+### API Keys Configuration
 
-| Placeholder | Where | Replace With |
+All API keys are stored in `keys.json` at the repo root (mounted read-only into Docker at `/home/node/keys.json`):
+
+```json
+{
+  "geminiApiKey": "YOUR_GEMINI_API_KEY",
+  "falApiKey": "YOUR_FAL_API_KEY",
+  "elevenLabsApiKey": "YOUR_ELEVENLABS_API_KEY",
+  "stabilityApiKey": "YOUR_STABILITY_API_KEY",
+  "youtubePlaylistId": "PLxxxxxxxxxxxxxxxx"
+}
+```
+
+| Key | Where to Get | Required |
 |---|---|---|
-| `YOUR_GEMINI_API_KEY` | Generate Script, Generate Voiceover nodes (URL query param) | Your Google AI Studio API key |
-| `=YOUR_PLAYLIST_ID` | Add to Playlist node, `playlistId` field | Your YouTube playlist ID prefixed with `=` (e.g., `=PLgSHSf2lAXv...`). The `=` makes it an expression, avoiding dropdown UI error. |
+| `geminiApiKey` | aistudio.google.com/apikeys (free) | Yes |
+| `falApiKey` | fal.ai/dashboard | Yes |
+| `elevenLabsApiKey` | elevenlabs.io/app/settings/api-keys (Starter plan+) | Yes |
+| `stabilityApiKey` | platform.stability.ai/account/keys (optional) | No — images fall back to fal.ai Flux |
+| `youtubePlaylistId` | YouTube playlist URL after `list=` | No — skips playlist step |
+
+**Also set** `=YOUR_PLAYLIST_ID` in the Add to Playlist node `playlistId` field (use `=PLxxxxxxx` expression syntax to avoid dropdown error).
 
 ## Project Structure
 
@@ -261,6 +291,11 @@ claude mcp add comfyui-mcp \
 
 ## Version History (recent — see docs/workflow-reference.md for full history)
 
+- **v8.4** (2026-04-11): 10-day test prep. `pickStory`: duplicate detection (60% word-overlap check against 14-day history in `/home/node/videos/last_stories.json`), top stories 6→3. `generateImages`: renamed to "Generate Images (SD3/Flux)", explicit stderr log on Flux fallback, confirmed atomic balance check (all 6 images same provider). `scriptGen`: reads `geminiApiKey` directly from keys.json (no longer passed via node output to prevent execution log leakage), word target 90-120→75-90 words, `thinkingBudget:0` (prevents token truncation). `parseScript`: min word count 80→65. `parseAgent`: removed `geminiApiKey` from output. `composeVideo`: removed .ass captions (YouTube auto-captions), download retry logic (3 attempts, status check, stream error handling), 300s timeout.
+- **v8.3** (2026-04-10): Image + music provider changes. `generateImages`: Stability AI SD3 as primary, fal.ai Flux fallback. SD3 returns base64 → data URIs (Kling accepts directly). `generateMusic`: switched from Stability AI (404, removed) to fal.ai Stable Audio. `scriptGen`: converted to Code node with sandbox escape. `parseScript`: updated for Gemini 3 thinking model. `generateVideo`: fixed polling URL.
+- **v8.2** (2026-04-08): API key fixes. `voiceover`: output format `mp3_44100_192` → `mp3_44100_128` (ElevenLabs Starter plan caps at 128kbps; 192kbps requires Creator tier). `generateMusic`: added `model: stable-audio-2.5` multipart field (newer model, flat 20 credits/gen). All API keys migrated to `keys.json` (mounted at `/home/node/keys.json`) — no more hardcoded keys in node code. All 4 cloud endpoints verified working: Gemini ✅ fal.ai Flux ✅ fal.ai Kling ✅ ElevenLabs ✅.
+- **v8.1** (2026-04-06): Script generation improvements. `pickStory` now scores and ranks all Reddit+HN posts by engagement (Reddit: score+comments×2, HN: points+comments×3, +300 per viral keyword hit from 30-keyword list). `parseAgent` repurposed to pass ranked list as `rawStory`. Gemini prompt: raised target to 90-120 words, added explicit viral story-selection criteria, image prompts now tied to specific HECK beats (Hook/Explain×2/Climax×2/Kicker). `parseScript` validation tightened: min 80 words (was 70), min 3 tags added. No new nodes.
+- **v8.0** (2026-04-06): Full cloud AI overhaul. Replaced ComfyUI SDXL+HunyuanVideo with fal.ai Flux Schnell (images) + Kling v1.6 I2V (video). Replaced Gemini TTS with ElevenLabs TTS (MP3, no PCM conversion). Added Stable Audio background music (45s, mixed at 28% vol). Added burned-in SRT captions via FFmpeg subtitles filter. Script prompt rewritten to HECK loop (Hook-Explain-Climax-Kicker) with seamless replay loop. Added Instagram Reels upload via Facebook Graph API resumable upload. 17→19 nodes. Runtime: 80-110 min → 35-70 min. Cost: $0 → ~$44/month for 30 Shorts (~$1.47/video: $0.09 images + $2.10 video + $0.17 voice + $0.37 music). No GPU or ComfyUI required.
 - **v7.2** (2026-03-28): Added local video export. New `exportLocal` node (17 nodes) saves `video.mp4` + `upload-info.txt` to `videos/{timestamp}_{title}/` on Windows host after each run. Requires `D:\N8n\docker-compose.yml` volume mount + `docker compose restart`.
 - **v7.1** (2026-03-28): Removed Instagram Reels cross-posting and Schedule Trigger. Back to 16 nodes, manual trigger only. YouTube-only pipeline.
 - **v7.0** (2026-03-14): Added Instagram Reels cross-posting. 16→26 nodes. Fork after `composeVideo`: Instagram branch posts 4x/week (Mon/Wed/Fri/Sun) via Facebook Resumable Upload API + Graph API. Schedule Trigger added. (Reverted in v7.1)

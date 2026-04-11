@@ -15,6 +15,7 @@ config
 .env
 .env.local
 .env.production
+keys.json
 
 # n8n MCP local settings
 .mcp.json
