@@ -1,4 +1,4 @@
-# YouTube Shorts Workflow - Complete Setup Guide (v8.4)
+# YouTube Shorts Workflow - Complete Setup Guide (v8.10)
 
 ## Prerequisites
 - n8n running locally in Docker at http://localhost:5678
@@ -25,7 +25,8 @@ docker compose up -d
 This automatically:
 - Builds a custom image with FFmpeg + ffprobe pre-installed
 - Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os` (required for video composition and sandbox-escape HTTP calls)
-- Sets task timeout to 9000s (150 min)
+- Sets task timeout to 9000s (150 min) via `N8N_RUNNERS_TASK_TIMEOUT`
+- Sets runner match timeout to 600s (10 min) via `N8N_RUNNERS_TASK_REQUEST_TIMEOUT` — prevents `"Task request timed out after 60 seconds"` after long-running Code nodes
 - Mounts `D:\Github Clones\N8nYtAutomation\videos` → `/home/node/videos` (for local export)
 - Mounts `D:\Github Clones\N8nYtAutomation\keys.json` → `/home/node/keys.json:ro` (API keys)
 - Auto-restarts with Docker Desktop (`restart: always`)

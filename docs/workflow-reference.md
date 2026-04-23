@@ -6,7 +6,7 @@
 - **Estimated Runtime**: 25-40 minutes per video (cloud AI generation)
 - **Monthly Cost**: ~$44/month for 30 Shorts (~$1.47/video: ~$0.78 images + $2.10 video + $0.17 voice + $0.37 music)
 - **Import file**: `exports/youtube-shorts-tech-news.json`
-- **Version**: v8.4
+- **Version**: v8.10
 
 ## Pipeline
 
@@ -44,7 +44,7 @@ Manual Trigger
 [Generate Voiceover (ElevenLabs)] -- Code+sandbox: eleven_multilingual_v2, voice Antoni,
     |                                 MP3 128kbps, ~$0.17/run
     v
-[Generate Background Music (Stable Audio)] -- Code+sandbox: fal.ai Stable Audio,
+[Generate Background Music (fal.ai Stable Audio)] -- Code+sandbox: fal.ai Stable Audio,
     |                                          45s WAV→MP3, ~$0.37/run
     v
 [Compose Video (FFmpeg)] -- Code: download 6 clips + minterpolate + xfade + voice+music mix,
@@ -147,9 +147,10 @@ return { json: { rawStory: data.rankedStories, timestamp: new Date().toISOString
 1. Reads `geminiApiKey` directly from `/home/node/keys.json` (NOT from input — prevents key appearing in execution logs)
 2. Builds Gemini request body with `thinkingBudget: 0` (disables thinking tokens — prevents JSON truncation) and `maxOutputTokens: 8192`
 3. Sandbox escape: writes request to `/tmp/n8n_gemini_*/body.json`, spawns `node gemini.js` for https access
-4. Returns raw Gemini API JSON response
+4. **Post-generation validation (v8.9)**: parses the SCRIPT field and throws `"Script ends mid-sentence..."` if it doesn't end with terminal punctuation (`.`, `!`, `?` — optionally followed by a closing quote/bracket). n8n's `retryOnFail: true, maxTries: 3, waitBetweenTries: 5s` then re-calls Gemini automatically.
+5. Returns raw Gemini API JSON response only if the script is sentence-complete (or after all retries exhausted — parseScript handles that case)
 
-**Prompt target**: 75-90 words, HECK loop (Hook-Explain×2-Climax×2-Kicker), Hook phrase echoed exactly in Kicker for seamless replay loop. 6 beat-tied image prompts.
+**Prompt target (v8.10 rewrite)**: Exactly 6 complete sentences (Hook-Explain×2-Climax×2-Kicker). Hard rules: every sentence ends with `.`/`!`/`?`; no sentence ends in a conjunction, preposition, article, or comma; "replay loop is THEMATIC, not grammatical" (Kicker is self-contained, does not syntactically trail into Hook). Soft target: 75-95 words (completeness always beats word count). Prompt includes concrete bad examples (`"...realizing that"`, `"...rewritten before"`) and good examples, plus a final self-check instruction. 6 beat-tied image prompts.
 
 **Model**: `gemini-3-flash-preview` (free, via Google AI Studio API key)
 
@@ -162,8 +163,9 @@ return { json: { rawStory: data.rankedStories, timestamp: new Date().toISOString
 2. Parses JSON; falls back to regex `{[\s\S]*}` extraction if response has markdown fences
 3. `findScriptData()` searches up to 2 levels deep for the SCRIPT key (handles flat and nested Gemini response formats)
 4. Normalizes UPPER and lowercase keys
+5. **Safety-net truncation (v8.9)**: if the script still ends without terminal punctuation after all scriptGen retries, truncates to the last complete sentence (last `.`/`!`/`?` boundary in the text). Ensures the voiceover never cuts off mid-word even when Gemini repeatedly fails to close its last sentence.
 
-**Validation**: ≥65 words, ≥3 tags, ≥5 image prompts. Throws descriptive error if any check fails.
+**Validation**: ≥65 words (after truncation), ≥3 tags, ≥5 image prompts. Throws descriptive error if any check fails.
 
 **Output**: `{ script, title, description, tags, imagePrompts, wordCount, timestamp }`
 
@@ -202,14 +204,16 @@ return { json: { rawStory: data.rankedStories, timestamp: new Date().toISOString
 
 **Logic**:
 1. Takes 6 image URLs/data URIs from Generate Images node
-2. For each image: POST to queue endpoint → receive `request_id`, `status_url`, `response_url`
-3. Polls `status_url` directly (from fal.ai response — NOT manually constructed)
+2. All 6 clips submitted in parallel — each POST returns `request_id`, `status_url`, `response_url`
+3. All 6 clips polled in parallel via `Promise.allSettled` — uses `status_url` from fal.ai response directly (never manually constructed)
 4. On `COMPLETED`: fetches `response_url` → extracts `video.url`
-5. Sandbox escape via spawned Node.js script
-6. Auth: `Authorization: Key {falApiKey}`
+5. 1 automatic retry per clip on timeout/failure before marking it failed
+6. Proceeds with ≥4/6 clips; fails hard if <4 complete
+7. Sandbox escape via spawned Node.js script
+8. Auth: `Authorization: Key {falApiKey}`
 
 **Video specs**: 9:16 aspect ratio, 5s duration per clip, 6 cinematic motion prompts. ~$0.35/clip, ~$2.10 total.
-**Timeout**: 1800s per clip.
+**Timeout**: 3600s per clip, 9000s total exec (matches `N8N_RUNNERS_TASK_TIMEOUT`). Total wall-clock time = slowest single clip (parallel), not sum of all clips.
 
 **Output**: `{ videoUrls, clipDurations, clipCount, script, title, description, tags }`
 
@@ -231,7 +235,7 @@ return { json: { rawStory: data.rankedStories, timestamp: new Date().toISOString
 
 **Output**: Binary `voice` (MP3) + JSON passthrough
 
-### Node 12: Generate Background Music (Stable Audio)
+### Node 12: Generate Background Music (fal.ai Stable Audio)
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `generateMusic`
 - **External service**: `fal.run/fal-ai/stable-audio`
@@ -264,13 +268,14 @@ return { json: { rawStory: data.rankedStories, timestamp: new Date().toISOString
    - 300s total exec timeout
 4. **Pass 1** (per clip): scale 1080:1920 (Lanczos) → crop → unsharp → color grade → minterpolate 60fps → setpts slowdown → trim → fps=30 → encode intermediate MP4
 5. **Audio mix**: voice (100%) + music (28% volume), trimmed to voice duration, mixed to AAC
-6. **Pass 2**: xfade stitch (0.3s fade transitions) → final encode libx264 CRF 18 slow preset
+6. **Pass 2**: xfade stitch (0.3s fade transitions) → final encode libx264 CRF 18 slow preset, output trimmed to exactly `audioDuration` via `-t`
 7. **No burned captions** — YouTube auto-generated captions used instead
 
 **Key FFmpeg details**:
 - `minterpolate` runs at native clip fps BEFORE `setpts` slowdown (prevents PTS corruption)
 - Save to intermediate `.mp4` between passes resets PTS (required for xfade)
 - `fps=30` comes AFTER `trim+setpts` in filter chain
+- `targetClipDur` includes a 1s buffer so video is always slightly longer than audio — final output trimmed to `audioDuration` with `-t`, never `-shortest` (which cuts audio if video is a single frame short)
 
 **Output**: Binary `video` (MP4, 1080×1920) + JSON with duration, numClips, title, script
 
@@ -323,8 +328,8 @@ Generate Script (Gemini)                 -> Parse Script JSON
 Parse Script JSON                        -> Generate Images (SD3/Flux)
 Generate Images (SD3/Flux)               -> Generate Video Clips (fal.ai Kling)
 Generate Video Clips (fal.ai Kling)      -> Generate Voiceover (ElevenLabs)
-Generate Voiceover (ElevenLabs)          -> Generate Background Music (Stable Audio)
-Generate Background Music (Stable Audio) -> Compose Video (FFmpeg)
+Generate Voiceover (ElevenLabs)          -> Generate Background Music (fal.ai Stable Audio)
+Generate Background Music (fal.ai Stable Audio) -> Compose Video (FFmpeg)
 Compose Video (FFmpeg)                   -> Export Video Locally
 Export Video Locally                     -> Prepare YouTube Metadata
 Prepare YouTube Metadata                 -> Upload to YouTube
@@ -361,7 +366,8 @@ All cloud API keys are stored in `keys.json` (repo root, mounted read-only at `/
 
 ### Video clip issues
 - "Clip download failed" + retry messages: fal.ai CDN URL expired (clips expire after ~24h) — re-run
-- "Kling timeout": Kling generation taking >1800s — rare, re-run
+- "Kling timeout after 3600s": fal.ai under extreme load — re-run; clips are retried once automatically before failing
+- "Only N/6 clips completed": N clips succeeded after retries; if N≥4 the workflow proceeds; if N<4 re-run
 - "Kling submit error 422": `image_url` format issue — data URIs and CDN URLs both confirmed working
 
 ### Music generation issues
@@ -377,6 +383,10 @@ All cloud API keys are stored in `keys.json` (repo root, mounted read-only at `/
 - Re-authorize OAuth2 if token expired
 - Quota: 10,000 units/day, upload = 1,600 units (~6 uploads/day max)
 - Video must be ≤60s and include `#Shorts` in title
+
+### Runner / infrastructure issues
+- `"Task request timed out after 60 seconds. Code node task was not matched to a runner"`: runner-match timeout (separate from execution timeout). Set `N8N_RUNNERS_TASK_REQUEST_TIMEOUT=600` in `D:\N8n\docker-compose.yml` and `docker compose up -d`. Default 60s is too short after long-running Code nodes (composeVideo, generateVideo) because the runner process restarts/reconnects.
+- Required docker-compose env vars: `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`, `N8N_RUNNERS_TASK_TIMEOUT=9000` (execution, **seconds**), `N8N_RUNNERS_TASK_REQUEST_TIMEOUT=600` (match), `N8N_RUNNERS_HEARTBEAT_INTERVAL=600`.
 
 ## Modification Guide
 
@@ -395,6 +405,12 @@ All cloud API keys are stored in `keys.json` (repo root, mounted read-only at `/
 
 ## Version History
 
+- **v8.10** (2026-04-16): Gemini prompt rewrite — root-cause fix for mid-sentence scripts. HECK structure explicit as 6 sentences, hard rules separated from soft word-count target, new "replay loop is THEMATIC not grammatical" rule (removes the ambiguity that caused Gemini to end with conjunctions/prepositions), explicit bad/good Kicker examples, self-check instruction. v8.9's validation + retry + truncation kept as defense-in-depth.
+- **v8.9** (2026-04-16): Permanent script mid-sentence fix. `scriptGen`: post-Gemini validation throws if SCRIPT doesn't end with terminal punctuation → n8n retries up to 3x automatically. New explicit prompt rule enforces terminal punctuation requirement. `parseScript`: safety-net truncation to last complete sentence if all retries still fail. Defense-in-depth — v8.8's prompt-only fix wasn't enforceable.
+- **v8.8** (2026-04-15): Script mid-sentence cutoff (prompt-only fix). `scriptGen`: word count rule → "always finish the final sentence even if slightly over 90 words, never stop mid-sentence"; Kicker rule → "A complete sentence ending on...". Insufficient — superseded by v8.9.
+- **v8.7** (2026-04-14): Voiceover cutoff fix. `composeVideo`: `-shortest` → `-t audioDuration`, +1s buffer to `targetClipDur`.
+- **v8.6** (2026-04-14): Kling reliability overhaul. Parallel submit+poll with `Promise.allSettled`, use `status_url`/`response_url` from response directly (manual URL construction was root cause), 1 retry per clip, proceed with ≥4/6 clips.
+- **v8.5** (2026-04-14): Kling timeout bump. 1200s→1800s per clip; exec 7800s→9000s.
 - **v8.4** (2026-04-11): 10-day test prep. `pickStory`: duplicate detection (word-overlap against 14-day history in `/home/node/videos/last_stories.json`), top stories 6→3. `generateImages`: renamed node to "Generate Images (SD3/Flux)", explicit stderr log on Flux fallback. `scriptGen`: reads `geminiApiKey` directly from keys.json (no longer passed via node output), word target 90-120→75-90 words, `thinkingBudget:0` added. `parseScript`: min word count 80→65. `parseAgent`: removed `geminiApiKey` from output (prevents API key leakage into n8n execution logs). `composeVideo`: removed .ass captions entirely (YouTube auto-captions), download retry logic (3 attempts, 5s delay, HTTP status validation, stream error handling), 300s exec timeout.
 - **v8.3** (2026-04-10): Image + music provider changes. `generateImages`: Stability AI SD3 as primary (balance check → data URI output), fal.ai Flux fallback. `generateMusic`: switched from Stability AI (404, endpoint removed) to fal.ai Stable Audio (WAV→MP3 via FFmpeg). `scriptGen`: converted to Code node with sandbox escape (HTTP Request node causing 400s). `parseScript`: updated for Gemini 3 thinking model. `generateVideo`: fixed polling URL (use status_url/response_url from submit response directly).
 - **v8.2** (2026-04-08): API fixes. ElevenLabs `mp3_44100_192` → `mp3_44100_128` (Starter plan cap). Stable Audio: added `model: stable-audio-2.5` field. All keys migrated to `keys.json`. All 4 cloud endpoints verified working.

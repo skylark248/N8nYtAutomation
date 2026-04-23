@@ -21,7 +21,7 @@ Gemini 3 Flash writes a 75-90 word HECK-loop script + 6 image prompts
     ↓
 Stability AI SD3 generates 6 vertical images (9:16) — or fal.ai Flux if credits low
     ↓
-fal.ai Kling v1.6 I2V animates each image into a 5-second video clip (9:16)
+fal.ai Kling v1.6 I2V animates each image into a 5-second video clip (9:16, all 6 submitted + polled in parallel)
     ↓
 ElevenLabs TTS creates MP3 voiceover narration (Antoni voice)
     ↓
@@ -113,6 +113,7 @@ This builds an image that:
 - Includes FFmpeg + ffprobe for video composition
 - Sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
 - Sets task timeout to 150 min (`N8N_RUNNERS_TASK_TIMEOUT=9000`, value is in **seconds**)
+- Sets runner match timeout to 10 min (`N8N_RUNNERS_TASK_REQUEST_TIMEOUT=600`) — prevents "Task request timed out after 60 seconds" errors after long-running Code nodes
 - Mounts `D:\Github Clones\N8nYtAutomation\videos` → `/home/node/videos` (local export)
 - Mounts `keys.json` → `/home/node/keys.json:ro` (API keys)
 - Auto-restarts with Docker Desktop (`restart: always`)
@@ -165,7 +166,7 @@ To skip playlist integration, delete the **"Add to Playlist"** node and connect 
 │   └── CHANGELOG.md                       # Full version history
 │
 ├── exports/
-│   └── youtube-shorts-tech-news.json      # Importable n8n workflow file (v8.4)
+│   └── youtube-shorts-tech-news.json      # Importable n8n workflow file (v8.10)
 │
 ├── videos/                                # Auto-created by workflow after each run
 │   └── {timestamp}_{title}/               #   One folder per video
@@ -292,6 +293,7 @@ This repo includes two git submodules for building/modifying n8n workflows with 
 | FFmpeg "command not found" | Rebuild image: `docker compose build && docker compose up -d` from `D:\N8n` |
 | "Cannot require 'child_process'" | Use `docker compose up -d` (not `docker run`) — sets the env var automatically |
 | "Task execution timed out" | Ensure `N8N_RUNNERS_TASK_TIMEOUT=9000` in docker-compose.yml (value is in **seconds**) |
+| "Task request timed out after 60 seconds" | Add `N8N_RUNNERS_TASK_REQUEST_TIMEOUT=600` in docker-compose.yml — runner match timeout (separate from execution timeout); default 60s is too short after long-running Code nodes |
 | Local video export not working | Verify volume mount in `D:\N8n\docker-compose.yml`: `"d:/Github Clones/N8nYtAutomation/videos:/home/node/videos"` |
 | n8n-mcp or n8n-skills folders empty | Run `git submodule init && git submodule update` |
 | keys.json not found in Docker | Verify volume mount includes `keys.json:/home/node/keys.json:ro` in docker-compose.yml |

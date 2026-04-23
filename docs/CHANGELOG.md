@@ -4,6 +4,105 @@ All notable changes to the YouTube Shorts Tech News Automation workflow are reco
 
 ---
 
+## v8.10 — 2026-04-16 (deployed)
+
+**Gemini prompt rewrite — root-cause fix for mid-sentence scripts.**
+
+### Changed
+- **scriptGen**: Full systemPrompt rewrite. Key changes:
+  - HECK structure now explicit as **exactly 6 complete sentences** (was loose "beats")
+  - **Separated hard rules from soft target**: sentence completeness is non-negotiable; 75-95 word count is a soft target that never beats completeness
+  - **Removed syntactic-loop ambiguity**: new rule "The replay loop is THEMATIC, not grammatical. Do NOT write a Kicker that syntactically trails off into the Hook. The Kicker must stand alone as a finished thought." — this was the actual root cause: Gemini was interpreting "flows back to the Hook" as permission to end with conjunctions/prepositions like "that", "before", "of"
+  - **Explicit bad-example list** including the actual failure modes: `"...realizing that"`, `"...rewritten before"`, `"The only question now is"`
+  - **Explicit good-example list** of self-contained Kickers
+  - **Self-check instruction** at the end: "Read your SCRIPT string's last 3 characters. They must end in a letter followed by . ! or ?"
+  - **Explicit banned end-words**: conjunctions (and, or, but, because, that, while, as), prepositions (of, to, in, on, for, with, by), articles (a, an, the), commas
+  - Output schema now shows example SCRIPT structure: `"Hook sentence. Explain1. Explain2. Climax1. Climax2. Kicker."`
+- v8.9's regex validation + retry + parseScript truncation remain as defense-in-depth safety nets.
+
+### Why
+v8.9 fixed the *symptom* at the pipeline level (retry + truncate), but Gemini kept producing incomplete scripts on every attempt because the original prompt's phrase "flows seamlessly back to the Hook" was ambiguous. Gemini interpreted it as a syntactic cliffhanger (end with "that", "before") instead of thematic resonance. This rewrite removes that ambiguity and gives Gemini concrete examples of what to do and what not to do.
+
+### Infrastructure
+- **`N8N_RUNNERS_TASK_REQUEST_TIMEOUT=600`** added to `D:\N8n\docker-compose.yml`. This is the runner *match* timeout (different from `N8N_RUNNERS_TASK_TIMEOUT`, which is the execution timeout). Default 60s was too short — after a long-running Code node (composeVideo, generateVideo) the runner process restarts/reconnects and the next Code node fires before it's ready. Symptom: `"Task request timed out after 60 seconds. Your Code node task was not matched to a runner within the timeout period."` Fix: set to 600s (10 min) and `docker compose up -d` to recreate the container.
+
+---
+
+## v8.9 — 2026-04-16 (deployed)
+
+**Permanent fix for script mid-sentence cutoff (defense-in-depth).**
+
+### Changed
+- **scriptGen**: Added post-Gemini sentence-completeness validation. After the Gemini response is parsed, if the SCRIPT field does not end with a terminal punctuation (`.`, `!`, `?` — optionally followed by a closing quote/bracket), the node throws `"Script ends mid-sentence..."`. n8n's `retryOnFail: true, maxTries: 3, waitBetweenTries: 5s` then automatically re-calls Gemini up to 3 times.
+- **scriptGen**: Added a new explicit prompt rule: `"The SCRIPT field MUST end with a period, question mark, or exclamation mark — never a conjunction, preposition, article, or comma"`.
+- **parseScript**: Added safety-net truncation — if the script still ends without terminal punctuation after all scriptGen retries, it is auto-truncated to the last complete sentence (last `.`/`!`/`?` boundary). Throws only if the truncated result is <65 words.
+
+### Why
+The v8.8 prompt-only fix ("always finish the final sentence") still allowed Gemini to return incomplete scripts — execution #7 produced 87 words ending with `"...tech giants are finally realizing that"`. Prompt instructions alone aren't enforceable; needed programmatic validation + retry + safety-net truncation.
+
+---
+
+## v8.8 — 2026-04-15 (deployed)
+
+**Script mid-sentence cutoff fix.**
+
+### Changed
+- **scriptGen**: Two prompt changes to prevent Gemini stopping mid-sentence when hitting the word count limit:
+  - Word count rule: `"75-90 words total (count carefully - this is strict)"` → `"75-90 words total — always finish the final sentence even if slightly over 90 words, never stop mid-sentence"`
+  - Kicker rule: `"Ends on a word or phrase..."` → `"A complete sentence ending on a word or phrase..."` — makes it explicit the Kicker must be a complete sentence
+- Root cause: Gemini treated the 90-word limit as a hard stop, generating 91 words then stopping mid-sentence (e.g. `"...history is rewritten before"` with no closing clause). The voiceover and video were both technically correct — the script itself was incomplete.
+
+---
+
+## v8.7 — 2026-04-14 (deployed)
+
+**Voiceover cutoff fix.**
+
+### Changed
+- **composeVideo**: Replaced `-shortest` flag with `-t audioDuration` in final FFmpeg command. Added 1s buffer to `targetClipDur` calculation so the video is always built slightly longer than the voiceover. Root cause: frame quantization at `fps=30` made the video a fraction shorter than `audioDuration`, causing `-shortest` to cut off the last 1–2 words of the narration.
+
+---
+
+## v8.6 — 2026-04-14 (deployed)
+
+**Kling clip reliability overhaul.**
+
+### Changed
+- **generateVideo**: Complete rewrite of clip processing strategy:
+  - All 6 clips submitted and polled in **parallel** (`Promise.allSettled`) — total time now equals the slowest single clip, not the sum of all clips
+  - Per-clip timeout raised to 3600s (60 min)
+  - Uses `status_url` and `response_url` directly from fal.ai submit response — previously these were manually constructed from the model name, which caused polling to never detect `COMPLETED` (root cause of all prior timeouts)
+  - Added 1 automatic retry per clip before marking it failed
+  - Proceeds with ≥4/6 clips if some fail after retry; fails hard if <4 complete
+
+---
+
+## v8.5 — 2026-04-14 (deployed)
+
+**Kling clip timeout fix.**
+
+### Changed
+- **generateVideo**: Per-clip poll timeout 1200s → 1800s (30 min). Total exec timeout 7800s → 9000s (150 min, matches `N8N_RUNNERS_TASK_TIMEOUT`). Fixes "Kling timeout after 1200s" failures during fal.ai peak load.
+
+---
+
+## v8.4 — 2026-04-14 (deployed)
+
+**Applied v8.3 + v8.4 changes to the running n8n instance via MCP tools. Workflow was previously running pre-v8.3 code.**
+
+### Deployed
+- All 7 nodes updated via `n8n_update_partial_workflow` MCP tool
+- `generateMusic`: switched from Stability AI (dead endpoint) → fal.ai Stable Audio, node renamed to "Generate Background Music (fal.ai Stable Audio)"
+- `generateImages`: Stability AI SD3 primary + fal.ai Flux fallback, renamed to "Generate Images (SD3/Flux)"
+- `pickStory`: 14-day duplicate detection added, top 6 → 3 stories
+- `scriptGen`: converted from HTTP Request to Code node, reads `geminiApiKey` directly from keys.json, `thinkingBudget:0`, 75-90 word target
+- `parseAgent`: removed `geminiApiKey` from output (API key no longer in n8n execution logs)
+- `parseScript`: min word count 80 → 65
+- `composeVideo`: removed SRT caption burning (YouTube auto-captions), download retry 3× with 3s delay + status check, 300s timeout
+- Fresh JSON export saved to `exports/youtube-shorts-tech-news.json`
+
+---
+
 ## v8.4 — 2026-04-11
 
 **10-day test prep. API key security, shorter scripts, duplicate detection.**
