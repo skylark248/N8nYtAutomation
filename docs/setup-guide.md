@@ -304,6 +304,12 @@ Once verified, change `privacyStatus` back to `public` for future runs.
 
 ## Troubleshooting
 
+### "Task request timed out after 60 seconds"
+- Full error: `"Your Code node task was not matched to a runner within the timeout period"`
+- This is the runner *match* timeout — different from the execution timeout (`N8N_RUNNERS_TASK_TIMEOUT`)
+- Cause: after a long-running Code node (composeVideo, generateVideo), the runner process restarts/reconnects and the next Code node fires before it's available
+- Fix: ensure `N8N_RUNNERS_TASK_REQUEST_TIMEOUT=600` is in `D:\N8n\docker-compose.yml`, then `docker compose up -d` to recreate the container
+
 ### "Cannot require 'child_process'" in any Code node
 - Ensure you started n8n via `docker compose up -d` from `D:\N8n`
 - The custom docker-compose.yml sets `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
